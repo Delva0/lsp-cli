@@ -38,6 +38,7 @@ class Workspace:
         self.native_paths = {}
         self.receivers, self.requests = {}, {}
         self.flow_analyses = {}
+        self.call_loaders = {}
         if self.loader:
             if defer_load:
                 return
@@ -121,6 +122,25 @@ class Workspace:
             self._catalog_key = key
         return self._catalog
 
+    def query_catalog(self, pattern, mode, matcher):
+        """Catalog lexical candidates and known ancestors, not every flow dependency."""
+        from .planning import lexical_candidate
+
+        sources = {source.name: source for source in self.sources
+                   if lexical_candidate(source, [(pattern, mode)], matcher, declarations=True)}
+        # An unqualified name can also select inherited addresses in classes
+        # which never spell that name themselves.
+        if "." not in pattern or mode != "glob" or matcher.ignore_case:
+            return self.catalog
+        roots = self.session.catalog([source for source in sources.values() if not source.parse_error])
+        for entry in roots.entries:
+            order = getattr(self, "type_orders", {}).get(entry.identity)
+            if order:
+                for cls in order[0]:
+                    if hasattr(cls, "source"):
+                        sources.setdefault(cls.source.name, cls.source)
+        return self.session.catalog([source for source in sources.values() if not source.parse_error])
+
     def catalog_for(self, source):
         """Source positions and lexical parents never require dependency catalogs."""
         return self.session.catalog([source])
@@ -143,7 +163,7 @@ class Workspace:
         for source in self.sources:
             if selector in (source.name, source.provenance.get("git_path")):
                 return self.catalog_for(source).select(selector)
-            if lexical_candidate(source, [(selector, "glob")], matcher):
+            if lexical_candidate(source, [(selector, "glob")], matcher, declarations=True):
                 found.extend(self.catalog_for(source).select(selector))
         exact = [entry for entry in found if entry.name == selector]
         return exact or found
@@ -200,6 +220,10 @@ class Workspace:
 
     def result(self, command, rows=()):
         metadata = self.metadata()
+        if proofs := getattr(self, "negative_member_proofs", None):
+            metadata = {**metadata, "negative_member_proofs": proofs}
+        if proofs := getattr(self, "unresolved_member_proofs", None):
+            metadata = {**metadata, "unresolved_member_proofs": proofs}
         diagnostics = [*self.diagnostics, *(self.loader.diagnostics if self.loader else [])]
         if not metadata["complete"]:
             diagnostics.append(
@@ -241,21 +265,36 @@ class Workspace:
                     found = self.definition(source, catalog.selection(source, node, node.attr, last=True))
                     if len(found) == 1:
                         return found[0]
+        unresolved_entry = None
         if "." in selector:
             parent, member = selector.rsplit(".", 1)
             parents = self.binding_prefix(parent)
+            if len({entry.name for entry in parents}) > 1:
+                raise SelectionError(f"ambiguous receiver binding: {parent}", "ambiguous", parents)
             if len(parents) == 1 and parents[0].kind == "class":
                 found = self.inherited(parents[0], member)
                 if found:
                     return found
+                from .member_lookup import absent_member
+
+                if absent_member(self, parents[0], member):
+                    raise SelectionError(f"No binding can establish {selector!r}")
+                unresolved_entry = parents[0]
         if selector in getattr(self, "binding_searches", ()):
             parts = selector.split(".")
             if not any(self.binding_prefix(".".join(parts[:size])) for size in range(len(parts), 0, -1)):
                 raise SelectionError(f"No declaration prefix can establish {selector!r}")
         # The flow engine establishes imports, aliases and receiver-sensitive
         # relationships unavailable from a source-only lookup.
+        unresolved_reason = None
         try:
             sources = self.analysis_sources([selector])
+            if unresolved_entry:
+                from .member_lookup import unresolved_member
+
+                unresolved_reason = unresolved_member(self, unresolved_entry, member, sources)
+                if unresolved_reason:
+                    raise SelectionError(unresolved_reason, "unresolved")
             if not self.flow_candidate(selector, sources):
                 raise SelectionError(f"No binding can establish {selector!r}")
             analysis = self.flow_analysis(sources)
@@ -270,7 +309,7 @@ class Workspace:
                 if len(found) == 1:
                     return found[0]
         except (ValueError, NeedsBindingsError) as error:
-            if isinstance(error, SelectionError) and error.status == "ambiguous":
+            if unresolved_reason or (isinstance(error, SelectionError) and error.status == "ambiguous"):
                 raise
         alternatives = self.lookup(selector.rsplit(".", 1)[-1])
         status = "not_found" if self.metadata()["complete"] else "unresolved"
@@ -303,6 +342,56 @@ class Workspace:
             self.flow_analyses[key] = self.session.analysis(sources)
         return self.flow_analyses[key]
 
+    def call_analysis(self, selectors, scopes):
+        """Close dependencies over evaluated imports before accepting call edges.
+
+        Module bodies are always included. Function-local imports enter when a
+        requested function or one of its callees is evaluated. Newly discovered
+        input invalidates provisional bindings; repeat until no input is missing.
+        """
+        if not self.loader:
+            return self.analysis(selectors)
+        key = tuple(selectors)
+        if key not in self.call_loaders:
+            self.call_loaders[key] = self.session.git(self.args, self.args.rev)
+        loader = self.call_loaders[key]
+        files = set(self.analysis_files(selectors))
+        # The requested scopes are already known. Include their local imports
+        # up front, avoiding a rebuild for dependencies visible in this input.
+        for source, entry, _receiver in scopes:
+            nodes = (node for node in ast.walk(entry.node) if isinstance(node, (ast.Import, ast.ImportFrom)))
+            files.update(loader.dependencies(source, nodes))
+        while True:
+            sources, _metadata, diagnostics = loader.collect("path", [], sorted(files), eager=True)
+            analysis = self.flow_analysis(sources)
+            for _source, entry, receiver in scopes:
+                if entry.name in analysis.symbols:
+                    analysis.summary(analysis.symbols[entry.name], receiver)
+            requested = {path for module in analysis.requested_modules for path in loader.with_packages(module)}
+            files = requested - loader.loaded.keys() - loader.failed - loader.omitted
+            if not files:
+                self.diagnostics.extend(row for row in diagnostics if row not in self.diagnostics)
+                self.loader.omitted.update(loader.omitted)
+                self.loader.failed.update(loader.failed)
+                for source in sources:
+                    self.loaded.setdefault(source.provenance["git_path"], source)
+                return analysis
+
+    def analysis_files(self, selectors):
+        files = [s.provenance["git_path"] for s in self.sources]
+        if selectors and not self.selection_files:
+            selected = set()
+            for selector in selectors:
+                parts = selector.split(".")
+                for length in range(len(parts), 0, -1):
+                    entries = self.binding_prefix(".".join(parts[:length]))
+                    if entries:
+                        selected.update(entry.source.provenance["git_path"] for entry in entries)
+                        break
+            if selected:
+                files = sorted(selected)
+        return files
+
     def flow_candidate(self, selector, sources):
         """Reject only names the existing flow selector cannot possibly return.
 
@@ -312,10 +401,38 @@ class Workspace:
         """
         parts = selector.split(".")
         names = set().union(*(source.binding_names for source in sources))
-        return any(
+        possible = any(
             all(part in names for part in parts[length:]) and self.lookup(".".join(parts[:length]))
             for length in range(len(parts), 0, -1)
         )
+        if not possible:
+            return False
+        # Bindings.select_member starts at the longest declaration prefix. A
+        # module can supply its own bindings, star imports or an input submodule;
+        # a same-named declaration somewhere else cannot create that member.
+        # Use the full dependency input above, so aliases/re-exports and longer
+        # prefixes discovered there retain precisely the existing precedence.
+        for length in range(len(parts) - 1, 0, -1):
+            entries = self.binding_prefix(".".join(parts[:length]))
+            if not entries:
+                continue
+            if len(entries) == 1 and entries[0].kind == "module":
+                source = entries[0].source
+                member = parts[length]
+                if (member not in source.declared_names and not source.guards["star"]
+                        and not any(item.module == f"{source.module}.{member}" for item in sources)):
+                    return False
+            elif len(entries) == 1 and entries[0].kind == "class":
+                from .member_lookup import static_class
+
+                order = getattr(self, "type_orders", {}).get(entries[0].identity)
+                if order and all(cls.name == "builtins.object" or static_class(cls) for cls in order[0]):
+                    member = parts[length]
+                    if (not any(self.lookup(f"{cls.name}.{member}", exact=True) for cls in order[0])
+                            and not any(member in source.attribute_writes for source in sources)):
+                        return False
+            break
+        return True
 
     def binding_prefix(self, selector):
         """Use the flow selector's exact-name and declaration-over-import precedence."""
@@ -326,21 +443,7 @@ class Workspace:
     def analysis_sources(self, selectors=(), *, reverse=False):
         if self.loader:
             loader = self.session.git(self.args, self.args.rev)
-            files = [s.provenance["git_path"] for s in self.sources]
-            if selectors and not self.selection_files:
-                selected = set()
-                for selector in selectors:
-                    parts = selector.split(".")
-                    for length in range(len(parts), 0, -1):
-                        entries = self.binding_prefix(".".join(parts[:length]))
-                        if entries:
-                            selected.update(entry.source.provenance["git_path"] for entry in entries)
-                            break
-                if selected:
-                    # Source discovery and semantic evaluation have different
-                    # scopes. Evaluate the selected definitions' full import
-                    # closure, not every file examined while matching names.
-                    files = sorted(selected)
+            files = self.analysis_files(selectors)
             sources, _metadata, diagnostics = loader.collect("refs" if reverse else "path", [], files)
             self.diagnostics.extend(diagnostics)
             self.loader.omitted.update(loader.omitted)

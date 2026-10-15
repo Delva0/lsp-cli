@@ -90,6 +90,7 @@ class Analysis:
         self.defaults: dict[str, dict[str, Value]] = {}
         self.diagnostics = [{"kind": "backend", "message": w} for w in self.facts.warnings]
         self.ready = False
+        self.requested_modules = set()
         self.global_writes = {s.module: set() for s in sources}
         self.mutable_fields = set()
         generators = set()
@@ -121,10 +122,11 @@ class Analysis:
         self.generators = frozenset(generators)
         # Each pass can propagate an import/re-export through another input.
         # A finite budget is visible, and unresolved facts never become edges.
+        initialization_sources = self.initialization_sources()
         for _ in range(len(self.symbols) + 2):
             before = {name: dict(state.names) for name, state in self.globals.items()}
             self.cache.clear()
-            for source in sources:
+            for source in initialization_sources:
                 summary = self.walk(self.symbols[source.module], State())
                 self.globals[source.module] = summary.state
                 self.module_summaries[source.module] = summary
@@ -139,6 +141,41 @@ class Analysis:
             self.diagnostics.append({"kind": "limit", "message": "module bindings did not converge"})
         self.cache.clear()
         self.ready = True
+
+    def initialization_sources(self):
+        """Evaluate available import dependencies first; retain order inside cycles.
+
+        This schedules the existing fixed-point solver, without replacing it or
+        truncating iterations. Unresolved and cyclic imports still converge under
+        the original input order.
+        """
+        from contextlib import suppress
+        from graphlib import CycleError, TopologicalSorter
+
+        graph = {}
+        for source in self.sources:
+            dependencies = set()
+            for node in source.imports:
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                else:
+                    module = self.import_module(source, node)
+                    names = [module, *(module + "." + alias.name for alias in node.names)]
+                for name in names:
+                    parts = name.split(".")
+                    dependencies.update(".".join(parts[:size]) for size in range(1, len(parts) + 1)
+                                        if ".".join(parts[:size]) in self.modules)
+            graph[source.module] = dependencies - {source.module}
+        sorter = TopologicalSorter(graph)
+        with suppress(CycleError):
+            sorter.prepare()
+        ordered = []
+        while ready := sorter.get_ready():
+            ordered.extend(self.modules[name] for name in ready)
+            sorter.done(*ready)
+        completed = {source.module for source in ordered}
+        ordered.extend(source for source in self.sources if source.module not in completed)
+        return ordered
 
     def fork(self):
         """Reuse immutable binding facts and AST identities with fresh query state."""
@@ -193,6 +230,7 @@ class Analysis:
 
     def imported(self, module, name="", seen=frozenset()):
         qualified = f"{module}.{name}" if name else module
+        self.requested_modules.update((module, qualified))
         if qualified in seen:
             return unknown("cyclic import/re-export")
         if name and module in self.globals and name in self.globals[module].names:

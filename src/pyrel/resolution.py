@@ -63,7 +63,9 @@ class Bindings:
                 span = ref.get("statement_span", {k: ref[k] for k in
                                                   ("source", "line", "column", "end_line", "end_column")})
                 declarations = []
-                for symbol in self.definitions:
+                local = (self.definitions.in_source(source) if hasattr(self.definitions, "in_source")
+                         else self.definitions)
+                for symbol in local:
                     if symbol.name != binding or symbol.source is not source:
                         continue
                     own = source.span(symbol.node)
@@ -78,7 +80,8 @@ class Bindings:
                     text = source.segment(node) if isinstance(node, (ast.Import, ast.ImportFrom)) else ref["expression"]
                 record = {**span, "name": binding, "role": ref["role"], "text": text,
                           "context": ref.get("context", []),
-                          "value": {k: ref[k] for k in ("resolution", "target", "reason", "candidates", "import_target") if k in ref},
+                          "value": {k: ref[k] for k in
+                                    ("resolution", "target", "reason", "candidates", "import_target") if k in ref},
                           **source.provenance}
                 location = tuple(record[k] for k in ("name", "source", "line", "column", "end_line", "end_column"))
                 if len(found) >= limit and location not in found:
@@ -102,7 +105,8 @@ class Bindings:
                             visit(read["binding"], position if read_owner == owner else None, depth + 1)
 
         visit(name)
-        return sorted(found.values(), key=lambda row: (row["source"], row["line"], row["column"], row["name"])), complete
+        ordered = sorted(found.values(), key=lambda row: (row["source"], row["line"], row["column"], row["name"]))
+        return ordered, complete
 
     def describe(self, name):
         value = self.value(name)

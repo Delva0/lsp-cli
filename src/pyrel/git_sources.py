@@ -234,9 +234,9 @@ class GitSources:
         parts = module.split(".")
         return [p for i in range(1, len(parts) + 1) for p in self.module_paths(".".join(parts[:i]))]
 
-    def dependencies(self, source):
+    def dependencies(self, source, nodes=None):
         paths = set()
-        for node in source.imports:
+        for node in source.imports if nodes is None else nodes:
             if isinstance(node, ast.Import):
                 modules = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom):
@@ -413,7 +413,7 @@ class GitSources:
                                     for s in self.query_candidates(parts[0]))
         return selected
 
-    def collect(self, command, symbols, files=(), receiver="", *, missing_ok=False):
+    def collect(self, command, symbols, files=(), receiver="", *, missing_ok=False, eager=False):
         seeds = self.seeds([*symbols, *([receiver] if receiver else [])], files, command, missing_ok=missing_ok)
         pending = deque(sorted(seeds))
         reverse = command in {"callers", "refs", "inherits"}
@@ -445,7 +445,8 @@ class GitSources:
                 continue
             self.loaded[path] = source
             if command not in {"outline", "where"}:
-                pending.extend(sorted(self.dependencies(source) | set(self.with_packages(source.module))))
+                pending.extend(sorted(self.dependencies(source, source.eager_imports if eager else None)
+                                      | set(self.with_packages(source.module))))
                 if reverse:
                     pending.extend(sorted(importers[path]))
         if not self.loaded and not missing_ok:

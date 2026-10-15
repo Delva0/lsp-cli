@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
+from functools import cached_property
+from types import SimpleNamespace
 
 from .model import Symbol
 
@@ -16,6 +18,8 @@ DECLARATIONS = {"binding", "import"}
 
 def definitions(source):
     result = [Symbol(source.module, "module", source.tree, source, None)]
+    children = source.tree_index[1]
+    scoped, owned = source.lexical_nodes
 
     def names(target):
         if isinstance(target, ast.Name):
@@ -26,14 +30,8 @@ def definitions(source):
         elif isinstance(target, ast.Starred):
             yield from names(target.value)
 
-    def own_nodes(node):
-        for child in ast.iter_child_nodes(node):
-            yield child
-            if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-                yield from own_nodes(child)
-
     def frame(node, name, kind, parents):
-        own = list(own_nodes(node))
+        own = (*owned.get(node, ()), *scoped.get(node, ()))
         globals_ = {n for child in own if isinstance(child, ast.Global) for n in child.names}
         nonlocals = {n for child in own if isinstance(child, ast.Nonlocal) for n in child.names}
         locals_ = {child.id for child in own if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)}
@@ -55,7 +53,7 @@ def definitions(source):
 
     def walk(node, current):
         scope, class_scope = current["name"], current["kind"] == "class"
-        for child in ast.iter_child_nodes(node):
+        for child in children[node]:
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 kind = "class" if isinstance(child, ast.ClassDef) else "method" if class_scope else "function"
                 name = f"{scope}.{child.name}"
@@ -80,18 +78,65 @@ def definitions(source):
                 binding_scope = owner(name, current)
                 if binding_scope is not None:
                     result.append(Symbol(f"{binding_scope}.{name}", kind, child, source, scope))
-            walk(child, current)
+            if children[child]:
+                walk(child, current)
 
     walk(source.tree, frame(source.tree, source.module, "module", []))
     return result
 
 
 def matching(definitions_, selector):
+    if isinstance(definitions_, DefinitionSet):
+        return definitions_.matching(selector)
     exact = [symbol for symbol in definitions_ if symbol.name == selector]
     if exact:
         return exact
     matches = [symbol for symbol in definitions_ if symbol.name.endswith("." + selector)]
     return [symbol for symbol in matches if symbol.kind != "import"] or matches
+
+
+class DefinitionSet:
+    """Load declaration locations only in files which can own the queried name.
+
+    Semantic values still come from the full Analysis. Full iteration retains the
+    previous declaration order, for graph construction and complete enumeration.
+    """
+
+    def __init__(self, analysis):
+        self.analysis = analysis
+        self.by_source = defaultdict(list)
+        for symbol in analysis.symbols.values():
+            self.by_source[id(symbol.source)].append(symbol)
+
+    def in_source(self, source):
+        return [*self.by_source[id(source)],
+                *(symbol for symbol in source.declarations if symbol.kind in DECLARATIONS)]
+
+    def __iter__(self):
+        yield from self.analysis.symbols.values()
+        for source in self.analysis.sources:
+            yield from (symbol for symbol in source.declarations if symbol.kind in DECLARATIONS)
+
+    def matching(self, selector):
+        from .planning import lexical_candidate
+        from .selectors import Matcher
+
+        # Every declaration address begins with its source's module. Exact
+        # matches take precedence over suffixes, including imported aliases.
+        exact = [symbol for symbol in self.analysis.symbols.values() if symbol.name == selector]
+        for source in self.analysis.sources:
+            if selector == source.module or selector.startswith(source.module + "."):
+                exact.extend(symbol for symbol in source.declarations
+                             if symbol.kind in DECLARATIONS and symbol.name == selector)
+        if exact:
+            return exact
+        matcher = Matcher(SimpleNamespace(ignore_case=False, pcre2=False))
+        candidates = [*self.analysis.symbols.values(), *(
+            symbol for source in self.analysis.sources
+            if lexical_candidate(source, [(selector, "glob")], matcher, declarations=True)
+            for symbol in source.declarations if symbol.kind in DECLARATIONS
+        )]
+        return matching(candidates, selector)
 
 
 def candidate(symbol, revision=""):
@@ -113,15 +158,17 @@ class Index:
         from .resolution import Bindings
 
         self.analysis = analysis
-        self.definitions = list(analysis.symbols.values())
-        self.declarations = defaultdict(list)
-        for source in analysis.sources:
-            for symbol in source.declarations:
-                if symbol.kind in DECLARATIONS:
-                    self.definitions.append(symbol)
-                    self.declarations[symbol.parent].append(symbol)
+        self.definitions = DefinitionSet(analysis)
         self.bindings = Bindings(analysis, self.definitions)
         self.resolutions = {}
+
+    @cached_property
+    def declarations(self):
+        result = defaultdict(list)
+        for symbol in self.definitions:
+            if symbol.kind in DECLARATIONS:
+                result[symbol.parent].append(symbol)
+        return result
 
     def select(self, selector):
         # File addresses are exact repository/input paths, with source identity

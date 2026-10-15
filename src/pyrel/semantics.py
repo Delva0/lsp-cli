@@ -329,7 +329,9 @@ def calls(ws, entry, *, fallback=True, fallback_sites=None, flow_selectors=()):
         for row in rows
     ):
         try:
-            analysis = ws.analysis(flow_selectors or [entry.name])
+            scopes = [(source, scope, ws.receivers.get(entry.identity, "") if scope.node is entry.node else "")
+                      for scope in owners.values()]
+            analysis = ws.call_analysis(flow_selectors or [entry.name], scopes)
             recovered = {}
             for scope in owners.values():
                 if scope.name in analysis.symbols:

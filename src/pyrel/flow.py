@@ -745,10 +745,12 @@ class Walker:
     def imports(self, node, state):
         for alias in node.names:
             if isinstance(node, ast.Import):
+                self.a.requested_modules.add(alias.name)
                 name = alias.asname or alias.name.split(".")[0]
                 value = self.a.imported(alias.name if alias.asname else name)
             else:
                 module = self.a.import_module(self.source, node)
+                self.a.requested_modules.add(module)
                 if alias.name == "*":
                     self.star_import(module, state)
                     continue

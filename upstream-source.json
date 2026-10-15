@@ -1,155 +1,167 @@
 {
   "source": "Graphub v5/clis/pyrel and v5/lsp",
-  "source_commit": "0861acb5fce6e4537ec40f4c2d8720097fa7c435",
-  "tool_version": "0.18.12",
+  "source_commit": "4b744d9325b1c1e13dab4034513587e6ac2ab61c",
+  "tool_version": "0.18.15",
   "source_files": {
+    "v5/clis/pyrel/__init__.py": {
+      "path": "src/pyrel/__init__.py",
+      "sha256": "7c29fa68e8298d4df981ae16f0e53adc53c249c718244ed77d7b3388ad84ed4c"
+    },
     "v5/clis/pyrel/__main__.py": {
       "path": "src/pyrel/__main__.py",
       "sha256": "f8edc1de396e48e5b8840ebf066c70bd08d6d7c6faf475c45a1fa05cb5595691"
     },
-    "v5/clis/pyrel/planning.py": {
-      "path": "src/pyrel/planning.py",
-      "sha256": "71e825d21c6a05653469fcafb0acd5d07febca8b36464da2c647cab18b789c87"
-    },
-    "v5/clis/pyrel/lsp_queries.py": {
-      "path": "src/pyrel/lsp_queries.py",
-      "sha256": "b3df2be91c118002ee2a56e8df441f9c8a9a5c4b1a135cd541088658b1a117d2"
-    },
-    "v5/clis/pyrel/semantics.py": {
-      "path": "src/pyrel/semantics.py",
-      "sha256": "0d2b2259598a9f1e417a353a486a2ccedeb07a5d7fa7d5b84e232c0aef8744e0"
-    },
-    "v5/clis/pyrel/listing.py": {
-      "path": "src/pyrel/listing.py",
-      "sha256": "cbd00bc83372b6b84dd7a4a89c3e2e0bd8fe4467bf55c8a3c809f96fece3f94b"
-    },
     "v5/clis/pyrel/analysis.py": {
       "path": "src/pyrel/analysis.py",
-      "sha256": "9a3d7fa1c6cfa4ed8410747dc3a4fdb817a14a30f532e5b37e7dddd46e1f7db5"
-    },
-    "v5/clis/pyrel/discovery.py": {
-      "path": "src/pyrel/discovery.py",
-      "sha256": "f68224743aba0c90fe729a67b0d204d129e89ffc0e39614186d544a52b405723"
-    },
-    "v5/clis/pyrel/completion.py": {
-      "path": "src/pyrel/completion.py",
-      "sha256": "23fc3a7e4e6ac9c383fd1eb4fe48a5fe47ddd4430888392b6a072df183082473"
-    },
-    "v5/clis/pyrel/evidence.py": {
-      "path": "src/pyrel/evidence.py",
-      "sha256": "e6ee281d3b85bb62271422920016359c740af9e15f43b5d72567ea738c8491d1"
-    },
-    "v5/clis/pyrel/git_queries.py": {
-      "path": "src/pyrel/git_queries.py",
-      "sha256": "94406ee48e9666597659592e0c0408b4b16f295854c5fa81a948c831c6304b0a"
-    },
-    "v5/clis/pyrel/model.py": {
-      "path": "src/pyrel/model.py",
-      "sha256": "db67105aae79d589798e4da3a76379f4417c1e32ae3a0f6a9b2208aef2b7b3e9"
-    },
-    "v5/clis/pyrel/effects.py": {
-      "path": "src/pyrel/effects.py",
-      "sha256": "1bd2bc1e8af6bf3ae362164904809879ae8dfbf419f0649b5feca7c955e81512"
-    },
-    "v5/clis/pyrel/file_selection.py": {
-      "path": "src/pyrel/file_selection.py",
-      "sha256": "448075acd4c098c9d26fd848d8835437a4f7602fd4a48ed673310d5340388ec3"
-    },
-    "v5/clis/pyrel/git_sources.py": {
-      "path": "src/pyrel/git_sources.py",
-      "sha256": "8cf4e358c0c962b0f99baf06aa585a9d9a0da5251bce9cc82051a8f20e37dbc1"
-    },
-    "v5/clis/pyrel/cypher_cli.py": {
-      "path": "src/pyrel/cypher_cli.py",
-      "sha256": "79081139ab37ceee261ffba235ddc92ccfa35f28261ac861d2b715edcc90852d"
-    },
-    "v5/clis/pyrel/positions.py": {
-      "path": "src/pyrel/positions.py",
-      "sha256": "2d3eb2f2b0962999883a2c1a0f46ae4d25f7f0294835c3815d9d277011e09eb5"
-    },
-    "v5/clis/pyrel/role_diff.py": {
-      "path": "src/pyrel/role_diff.py",
-      "sha256": "875734c98a4f3ad0bfbe894e78e54fab81843a133a9d2ca32212da400b7f428f"
-    },
-    "v5/clis/pyrel/batch.py": {
-      "path": "src/pyrel/batch.py",
-      "sha256": "04eae120344b374bf395d3e023c4c73610579a464d33041bf43b5ae6cae928ad"
-    },
-    "v5/clis/pyrel/flow.py": {
-      "path": "src/pyrel/flow.py",
-      "sha256": "c748016504bf2db876c2fc5bba9e11f6e43cb8bdfde7fbdc841562b564f0d29d"
-    },
-    "v5/clis/pyrel/cypher.py": {
-      "path": "src/pyrel/cypher.py",
-      "sha256": "e87ae30386039c5351f2176f5bac1d0c67181f0b3a3125271ddacfb9014563f7"
-    },
-    "v5/clis/pyrel/selectors.py": {
-      "path": "src/pyrel/selectors.py",
-      "sha256": "2f025aee0ae34af8339f0ff64ee7ee528c1084ec7ae531f6556d58b940acf106"
-    },
-    "v5/clis/pyrel/service.py": {
-      "path": "src/pyrel/service.py",
-      "sha256": "17a5afe2abc1572cf32aa7604127e925e5ff48326386cbd7bd73a2930db283d1"
-    },
-    "v5/clis/pyrel/cli.py": {
-      "path": "src/pyrel/cli.py",
-      "sha256": "9afad1cb322822ab4f58b08b876d1d7f67bfa13eb13f068f4c132d9fb83c829f"
-    },
-    "v5/clis/pyrel/workspace.py": {
-      "path": "src/pyrel/workspace.py",
-      "sha256": "2a870b2d3cad90bd6f893608ec8764215baefda7c5fcb4f909754e3ed7f4130f"
-    },
-    "v5/clis/pyrel/code_graph.py": {
-      "path": "src/pyrel/code_graph.py",
-      "sha256": "475e1cceaceea2f15558405c60c1850829110dce7d3410396365f4c5d727e5b0"
+      "sha256": "079801bfe5e903754a408334b29d7f62274d3be4f6ef7ed38d0bfc946fab82aa"
     },
     "v5/clis/pyrel/backend.py": {
       "path": "src/pyrel/backend.py",
       "sha256": "855c12ba1e55438c3b20d84328bc00eefeb03a67d3f71bdd790f2aac3a40eb04"
     },
-    "v5/clis/pyrel/fast_sources.py": {
-      "path": "src/pyrel/fast_sources.py",
-      "sha256": "1ae1aa991f99b864134a2a9545166180036323d2728720affa897b906576b11b"
+    "v5/clis/pyrel/batch.py": {
+      "path": "src/pyrel/batch.py",
+      "sha256": "d9d299bb0b6d968cb486e6265e278e46c105a1fb100a667eaf75f7982d514903"
     },
-    "v5/clis/pyrel/symbols.py": {
-      "path": "src/pyrel/symbols.py",
-      "sha256": "d62f677b6260487807a9c49d71d6830f3dfd0c8048f81da4de8b0040b671717c"
+    "v5/clis/pyrel/cli.py": {
+      "path": "src/pyrel/cli.py",
+      "sha256": "9afad1cb322822ab4f58b08b876d1d7f67bfa13eb13f068f4c132d9fb83c829f"
     },
-    "v5/clis/pyrel/feedback.py": {
-      "path": "src/pyrel/feedback.py",
-      "sha256": "5e7a6e2ae817f9691fa25cbabe84df6a25e9f99e72bc3de70d6d2b55c438dac0"
-    },
-    "v5/clis/pyrel/queries.py": {
-      "path": "src/pyrel/queries.py",
-      "sha256": "60957ab3eccc56f2e62654342801c2d4efc6d5139859b89e6648c2aff327466b"
+    "v5/clis/pyrel/code_graph.py": {
+      "path": "src/pyrel/code_graph.py",
+      "sha256": "475e1cceaceea2f15558405c60c1850829110dce7d3410396365f4c5d727e5b0"
     },
     "v5/clis/pyrel/commands.py": {
       "path": "src/pyrel/commands.py",
       "sha256": "89a17cf31baeae669785d39e7d059e63ac32c1d61793a3aae597eb85fec80bce"
     },
-    "v5/clis/pyrel/source_view.py": {
-      "path": "src/pyrel/source_view.py",
-      "sha256": "c296f56351b8a4d67b2497027ffabd6bf821630a022c164ab7c9625c3f0e2832"
+    "v5/clis/pyrel/completion.py": {
+      "path": "src/pyrel/completion.py",
+      "sha256": "23fc3a7e4e6ac9c383fd1eb4fe48a5fe47ddd4430888392b6a072df183082473"
     },
-    "v5/clis/pyrel/__init__.py": {
-      "path": "src/pyrel/__init__.py",
-      "sha256": "570b02f4591a966dd7c99e7c619dd1acba3f928ef9fdf7e71f6490a4c8a6fa8e"
+    "v5/clis/pyrel/cypher.py": {
+      "path": "src/pyrel/cypher.py",
+      "sha256": "e87ae30386039c5351f2176f5bac1d0c67181f0b3a3125271ddacfb9014563f7"
     },
-    "v5/clis/pyrel/resolution.py": {
-      "path": "src/pyrel/resolution.py",
-      "sha256": "fbf9bd773b8e28d9a4909d1cd94df1c7f8768d3f81ad3777418eaddb91712f6a"
+    "v5/clis/pyrel/cypher_cli.py": {
+      "path": "src/pyrel/cypher_cli.py",
+      "sha256": "79081139ab37ceee261ffba235ddc92ccfa35f28261ac861d2b715edcc90852d"
+    },
+    "v5/clis/pyrel/discovery.py": {
+      "path": "src/pyrel/discovery.py",
+      "sha256": "037d2673a78de0add43ee716ead79fd8fe7d413e8a66f1c9fe85cd4c9bebd580"
+    },
+    "v5/clis/pyrel/effects.py": {
+      "path": "src/pyrel/effects.py",
+      "sha256": "1bd2bc1e8af6bf3ae362164904809879ae8dfbf419f0649b5feca7c955e81512"
+    },
+    "v5/clis/pyrel/evidence.py": {
+      "path": "src/pyrel/evidence.py",
+      "sha256": "e6ee281d3b85bb62271422920016359c740af9e15f43b5d72567ea738c8491d1"
+    },
+    "v5/clis/pyrel/fast_sources.py": {
+      "path": "src/pyrel/fast_sources.py",
+      "sha256": "1ae1aa991f99b864134a2a9545166180036323d2728720affa897b906576b11b"
+    },
+    "v5/clis/pyrel/feedback.py": {
+      "path": "src/pyrel/feedback.py",
+      "sha256": "5e7a6e2ae817f9691fa25cbabe84df6a25e9f99e72bc3de70d6d2b55c438dac0"
+    },
+    "v5/clis/pyrel/file_selection.py": {
+      "path": "src/pyrel/file_selection.py",
+      "sha256": "448075acd4c098c9d26fd848d8835437a4f7602fd4a48ed673310d5340388ec3"
+    },
+    "v5/clis/pyrel/flow.py": {
+      "path": "src/pyrel/flow.py",
+      "sha256": "29448c5673ccf3c5fddb166a1dd13b0684d28cebeb4cc5b6f569cbb7164a0eb9"
+    },
+    "v5/clis/pyrel/git_queries.py": {
+      "path": "src/pyrel/git_queries.py",
+      "sha256": "94406ee48e9666597659592e0c0408b4b16f295854c5fa81a948c831c6304b0a"
+    },
+    "v5/clis/pyrel/git_sources.py": {
+      "path": "src/pyrel/git_sources.py",
+      "sha256": "7efb7a864f5596be0d78040ffd7b6bb9f3c4fc02089d8d759217013ff6395c0f"
+    },
+    "v5/clis/pyrel/lexical.py": {
+      "path": "src/pyrel/lexical.py",
+      "sha256": "15bd06743d8bc35cd246a361d82672962612aa76678c4bcbe35e9e1e488ef5b0"
+    },
+    "v5/clis/pyrel/listing.py": {
+      "path": "src/pyrel/listing.py",
+      "sha256": "cbd00bc83372b6b84dd7a4a89c3e2e0bd8fe4467bf55c8a3c809f96fece3f94b"
+    },
+    "v5/clis/pyrel/lsp_queries.py": {
+      "path": "src/pyrel/lsp_queries.py",
+      "sha256": "066be818c08cc1f93df8a6b4f5340c4b84f2eb04d92ac8b00c1ccfc1c37b505e"
+    },
+    "v5/clis/pyrel/member_lookup.py": {
+      "path": "src/pyrel/member_lookup.py",
+      "sha256": "03f287d6ba2427190552c423f7ac9b38a6c1fd33b0e4b885f29d24790042cb2f"
+    },
+    "v5/clis/pyrel/model.py": {
+      "path": "src/pyrel/model.py",
+      "sha256": "70d71edf4a2b6d5ff1935f2819e52417b4eb37856cd84a3b40ed086e87866e88"
+    },
+    "v5/clis/pyrel/planning.py": {
+      "path": "src/pyrel/planning.py",
+      "sha256": "08090f9b7ae26ad4951d5a85685a603734061c88cf8c4534b8768fbd97e6563c"
+    },
+    "v5/clis/pyrel/positions.py": {
+      "path": "src/pyrel/positions.py",
+      "sha256": "2d3eb2f2b0962999883a2c1a0f46ae4d25f7f0294835c3815d9d277011e09eb5"
+    },
+    "v5/clis/pyrel/queries.py": {
+      "path": "src/pyrel/queries.py",
+      "sha256": "60957ab3eccc56f2e62654342801c2d4efc6d5139859b89e6648c2aff327466b"
     },
     "v5/clis/pyrel/relations.py": {
       "path": "src/pyrel/relations.py",
       "sha256": "d28c975214c4c3bd70a68ee0fa0ca5e8334510b5e18d2a17e089f9e0b4d5d72d"
     },
+    "v5/clis/pyrel/resolution.py": {
+      "path": "src/pyrel/resolution.py",
+      "sha256": "c494f2ba1aa3746267bd74b2c19b7f7eab2bc5c08088507949ad7964cbde2e6d"
+    },
+    "v5/clis/pyrel/role_diff.py": {
+      "path": "src/pyrel/role_diff.py",
+      "sha256": "875734c98a4f3ad0bfbe894e78e54fab81843a133a9d2ca32212da400b7f428f"
+    },
     "v5/clis/pyrel/search.py": {
       "path": "src/pyrel/search.py",
       "sha256": "da21125b0a165b4a2d182243e4026af9e1347918aa8eb5e81d740e92ee634dae"
     },
+    "v5/clis/pyrel/selectors.py": {
+      "path": "src/pyrel/selectors.py",
+      "sha256": "2f025aee0ae34af8339f0ff64ee7ee528c1084ec7ae531f6556d58b940acf106"
+    },
+    "v5/clis/pyrel/semantics.py": {
+      "path": "src/pyrel/semantics.py",
+      "sha256": "bce381d56ed6aceff32ce5cc0beab0c642f6c5db508eb8fb53abf41649074f5a"
+    },
+    "v5/clis/pyrel/service.py": {
+      "path": "src/pyrel/service.py",
+      "sha256": "17a5afe2abc1572cf32aa7604127e925e5ff48326386cbd7bd73a2930db283d1"
+    },
     "v5/clis/pyrel/session.py": {
       "path": "src/pyrel/session.py",
       "sha256": "1bd4c9b969604d2fe4f04023527070ec7d94b1accbfc82e006c4d951e055beff"
+    },
+    "v5/clis/pyrel/source_view.py": {
+      "path": "src/pyrel/source_view.py",
+      "sha256": "c296f56351b8a4d67b2497027ffabd6bf821630a022c164ab7c9625c3f0e2832"
+    },
+    "v5/clis/pyrel/symbols.py": {
+      "path": "src/pyrel/symbols.py",
+      "sha256": "d62f677b6260487807a9c49d71d6830f3dfd0c8048f81da4de8b0040b671717c"
+    },
+    "v5/clis/pyrel/workspace.py": {
+      "path": "src/pyrel/workspace.py",
+      "sha256": "b29f91b08f7b181b996de069cc9b1ba9a7cae4730ccbffeb6a62486ff26af07d"
+    },
+    "v5/lsp/__init__.py": {
+      "path": "src/graphub_lsp/__init__.py",
+      "sha256": "d518f422810ae5bfb18efbf822f8305a7251e8a234b32313e528d7d2993cda53"
     },
     "v5/lsp/lsp_client.py": {
       "path": "src/graphub_lsp/lsp_client.py",
@@ -158,14 +170,6 @@
     "v5/lsp/lsp_worker.py": {
       "path": "src/graphub_lsp/lsp_worker.py",
       "sha256": "4e4c94e440374d5b57a11bf74d362ee0cc4cb3d74df0eeea42327f218b109329"
-    },
-    "v5/lsp/__init__.py": {
-      "path": "src/graphub_lsp/__init__.py",
-      "sha256": "d518f422810ae5bfb18efbf822f8305a7251e8a234b32313e528d7d2993cda53"
-    },
-    "v5/clis/pyrel/lexical.py": {
-      "path": "src/pyrel/lexical.py",
-      "sha256": "79b5adceb737b525c037f687d7c0eb2d213762f422a1d50cbc856ac9373b43ea"
     }
   }
 }

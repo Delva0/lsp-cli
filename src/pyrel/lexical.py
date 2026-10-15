@@ -18,25 +18,29 @@ class LexicalFacts:
         self.mro = {}
         self.scopes = {}
         for source in sources:
-            table = symtable.symtable(source.text, source.name, "exec")
-            self.register(source.module, table)
+            if "_compiler_scopes" not in source.__dict__:
+                scopes = {}
+                table = symtable.symtable(source.text, source.name, "exec")
+                self.register(source.module, table, scopes)
+                source._compiler_scopes = scopes
+            self.scopes.update(source._compiler_scopes)
 
-    def register(self, name, table):
-        self.scopes[name] = frozenset(
+    def register(self, name, table, scopes):
+        scopes[name] = frozenset(
             symbol.get_name() for symbol in table.get_symbols()
             if symbol.is_assigned() and not symbol.is_imported()
             and not symbol.is_global() and not symbol.is_free()
         )
-        self.children(name, table)
+        self.children(name, table, scopes)
 
-    def children(self, name, table):
+    def children(self, name, table, scopes):
         for child in table.get_children():
             kind = child.get_type()
             if getattr(kind, "value", kind) == "type parameters":
                 # PEP 695 adds an implicit scope absent from the source AST.
-                self.children(name, child)
+                self.children(name, child, scopes)
             else:
-                self.register(name + "." + child.get_name(), child)
+                self.register(name + "." + child.get_name(), child, scopes)
 
     def local_names(self, scope):
         return set(self.scopes.get(scope, ()))

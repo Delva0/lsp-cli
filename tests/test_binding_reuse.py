@@ -60,7 +60,7 @@ def test_pyan_keeps_warnings_without_formatting_discarded_debug_logs(monkeypatch
     "def start():\n global imported\n imported = replacement\n imported()\n",
     "def start[T](arg: T): return imported()\n",
 ])
-def test_flow_evidence_matches_original_pyan_pipeline(body):
+def test_flow_evidence_matches_original_pyan_pipeline(body, monkeypatch):
     sources = [
         Source("base.py", "pkg.base", "def target(): pass\nclass Base:\n def run(self): return target()\n"),
         Source("pkg/__init__.py", "pkg", "from .base import Base, target\n", True),
@@ -68,7 +68,9 @@ def test_flow_evidence_matches_original_pyan_pipeline(body):
                "def replacement(): pass\n" + body),
     ]
     current = Analysis(sources)
-    original = Analysis(sources, facts_factory=PyanFacts)
+    with monkeypatch.context() as patch:
+        patch.setattr(Analysis, "initialization_sources", lambda self: self.sources)
+        original = Analysis(sources, facts_factory=PyanFacts)
 
     def evidence(value):
         if isinstance(value, dict):

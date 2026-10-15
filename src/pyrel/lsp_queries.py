@@ -110,9 +110,21 @@ def contains(span, point):
 
 def contexts(source, root, target):
     """Preserve lexical control nesting; execution-sensitive traces use the flow engine."""
-    def walk(node, stack):
-        if node is target:
-            return stack
+    cache = getattr(source, "_context_indices", None)
+    if cache is None:
+        source._context_indices = cache = {}
+    if id(root) in cache:
+        return [dict(part) for part in cache[id(root)].get(id(target), ())]
+    indexed = {}
+    pending = [(root, ())]
+    while pending:
+        node, stack = pending.pop()
+        # Some AST operator/context nodes are shared. Preserve the old walk's
+        # first occurrence rather than overwriting it with the last occurrence.
+        if id(node) in indexed:
+            continue
+        indexed[id(node)] = stack
+        children = []
         for field, value in ast.iter_fields(node):
             nested = stack
             kind, label = None, ""
@@ -129,12 +141,12 @@ def contexts(source, root, target):
             elif isinstance(node, (ast.With, ast.AsyncWith)) and field == "body":
                 kind = "async_with" if isinstance(node, ast.AsyncWith) else "with"
             if kind:
-                nested = [*stack, {"kind": kind, "label": label, **source.span(node)}]
-            for child in value if isinstance(value, list) else [value]:
-                if isinstance(child, ast.AST) and (found := walk(child, nested)) is not None:
-                    return found
-        return None
-    return walk(root, []) or []
+                nested = (*stack, {"kind": kind, "label": label, **source.span(node)})
+            children.extend((child, nested) for child in (value if isinstance(value, list) else [value])
+                            if isinstance(child, ast.AST))
+        pending.extend(reversed(children))
+    cache[id(root)] = indexed
+    return [dict(part) for part in indexed.get(id(target), ())]
 
 
 def relationship(args, loader, session):

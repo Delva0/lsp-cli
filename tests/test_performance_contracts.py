@@ -18,6 +18,52 @@ from .test_git_sources import git, write
 from .test_git_sources import repository as repository  # noqa: PLC0414
 
 
+def test_context_lookup_walks_each_scope_once_and_returns_isolated_records(monkeypatch):
+    from pyrel.lsp_queries import contexts
+
+    source = Source("sample.py", "sample", (
+        "async def work(flag):\n"
+        " try:\n"
+        "  if flag:\n   async with resource():\n    await ready()\n"
+        "  else:\n   for item in values():\n    consume(item)\n"
+        " except ValueError:\n  recover()\n"
+        " finally:\n  cleanup()\n"
+    ))
+    root = source.tree.body[0]
+    assert source.syntax == tuple(ast.walk(source.tree))
+    assert all(children == tuple(ast.iter_child_nodes(node)) for node, children in source.tree_index[1].items())
+    calls = {ast.unparse(n.func): n for n in ast.walk(root) if isinstance(n, ast.Call)}
+    expected = {"ready": ["try", "if", "async_with"], "consume": ["try", "else", "loop"],
+                "recover": ["except"], "cleanup": ["finally"]}
+    for name, kinds in expected.items():
+        assert [row["kind"] for row in contexts(source, root, calls[name])] == kinds
+    monkeypatch.setattr(ast, "iter_fields", lambda _node: pytest.fail("cached scope was scanned again"))
+    rows = contexts(source, root, calls["ready"])
+    rows[0]["kind"] = "changed"
+    assert [row["kind"] for row in contexts(source, root, calls["ready"])] == expected["ready"]
+
+
+def test_import_dependency_order_preserves_fixed_point_and_reduces_module_visits(monkeypatch):
+    sources = [Source(f"mod{i}.py", f"mod{i}", f"from mod{i + 1} import target\n") for i in range(16)]
+    sources.append(Source("mod16.py", "mod16", "def target(): pass\n"))
+    count = []
+    original = Analysis.walk
+
+    def record(self, symbol, *args, **kwargs):
+        if symbol.kind == "module":
+            count.append(symbol.name)
+        return original(self, symbol, *args, **kwargs)
+
+    monkeypatch.setattr(Analysis, "walk", record)
+    scheduled = Analysis(sources)
+    assert len(count) <= len(sources) * 2
+    monkeypatch.setattr(Analysis, "initialization_sources", lambda self: self.sources)
+    old = Analysis(sources)
+    assert {name: state.names for name, state in scheduled.globals.items()} == {
+        name: state.names for name, state in old.globals.items()
+    }
+
+
 def test_interleaved_single_source_queries_do_not_rebuild_catalog_indexes(monkeypatch):
     sources = [Source(f"m{i}.py", f"m{i}", "class C:\n def f(self): return 1\n") for i in range(20)]
     indexed = []
@@ -139,6 +185,285 @@ container = Container()
     exhaustive = query("show", selector, source=source, status=status)
     for key in ("results", "heads", "status"):
         assert planned.get(key) == exhaustive.get(key)
+
+
+def test_missing_module_member_does_not_analyze_unrelated_same_named_bindings(repository, monkeypatch):
+    write(repository, "src/pkg/empty.py", "from .other import Worker\n")
+    write(repository, "src/pkg/other.py", "class Worker:\n def run(self): return 1\n"
+          "worker_base = Worker\n")
+    git(repository, "add", "src/pkg/empty.py", "src/pkg/other.py")
+    git(repository, "commit", "-qm", "a missing module member with an unrelated namesake")
+    args = ("show", "HEAD:pkg.empty.worker_base.Worker.run", "--repo", str(repository))
+    with monkeypatch.context() as patch:
+        patch.setattr(Workspace, "flow_candidate", lambda *_args: True)
+        exhaustive = query(*args, status=1)
+
+    def fail(*_args):
+        pytest.fail("An absent module member cannot be supplied by unrelated declarations")
+
+    monkeypatch.setattr(Analysis, "__init__", fail)
+    planned = query(*args, status=1)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+
+
+def test_binding_selection_keeps_import_evidence_without_enumerating_unrelated_declarations():
+    from pyrel.discovery import Index
+
+    sources = [
+        Source("entry.py", "entry", "from worker import Worker as Alias\n"),
+        Source("worker.py", "worker", "class Worker:\n def run(self): return 1\n"),
+        Source("noise.py", "noise", "from worker import Worker\nunused = Worker\n"),
+    ]
+    index = Index(Analysis(sources))
+    assert "declarations" not in sources[2].__dict__
+    matches = index.select("entry.Alias.run")
+    assert [symbol.name for symbol, _ in matches] == ["worker.Worker.run"]
+    assert {record["name"] for record in index.resolutions["entry.Alias.run"]["evidence"]} >= {
+        "entry.Alias", "worker.Worker",
+    }
+    assert "declarations" not in sources[2].__dict__
+
+
+@pytest.mark.parametrize("selector", [
+    "pkg.start.Alias", "Alias", "outer.saved", "pkg.start.outer.saved", "saved", "run", "absent",
+])
+def test_deferred_declaration_matching_preserves_full_enumeration(selector):
+    from pyrel.discovery import Index, matching
+
+    sources = [
+        Source("start.py", "pkg.start", "from pkg.worker import Worker as Alias\n"
+               "def outer():\n saved = Alias\n def inner():\n  nonlocal saved\n  saved = Alias\n return saved\n"),
+        Source("worker.py", "pkg.worker", "class Worker:\n def run(self): pass\nAlias = Worker\n"),
+        Source("noise.py", "noise", "Alias = 3\n"),
+    ]
+    index = Index(Analysis(sources))
+    selected = matching(index.definitions, selector)
+    exhaustive = matching(list(index.definitions), selector)
+    def identity(symbol):
+        return symbol.name, symbol.kind, symbol.source.name, id(symbol.node)
+
+    assert list(map(identity, selected)) == list(map(identity, exhaustive))
+
+
+@pytest.mark.parametrize(("binding", "status"), [
+    ("from .other import Worker as Alias\n", 0),
+    ("from .other import *\n", 0),
+    ("from .other import Worker\nAlias = Worker\n", 0),
+    # The flow engine conservatively keeps a globally mutated binding unknown.
+    ("from .other import Worker\ndef install():\n global Alias\n Alias = Worker\ninstall()\n", 1),
+])
+def test_module_binding_preflight_keeps_aliases_star_imports_and_global_writes(
+    repository, monkeypatch, binding, status,
+):
+    write(repository, "src/pkg/entry.py", binding)
+    write(repository, "src/pkg/other.py", "class Worker:\n def run(self): return 1\nAlias = Worker\n")
+    git(repository, "add", "src/pkg/entry.py", "src/pkg/other.py")
+    git(repository, "commit", "-qm", "valid dynamic module binding")
+    args = ("show", "HEAD:pkg.entry.Alias.run", "--repo", str(repository))
+    planned = query(*args, status=status)
+    monkeypatch.setattr(Workspace, "flow_candidate", lambda *_args: True)
+    exhaustive = query(*args, status=status)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+
+
+def test_missing_member_of_known_mro_does_not_run_flow_for_other_classes(monkeypatch):
+    source = ("class WorkerBase: pass\nclass Other:\n def get_model(self): return 1\n"
+              "def unrelated(obj): return getattr(obj, 'get_model', None)\n")
+    with monkeypatch.context() as patch:
+        patch.setattr(Workspace, "flow_candidate", lambda *_args: True)
+        exhaustive = query("show", "WorkerBase.get_model", source=source, status=1)
+
+    def fail(*_args):
+        pytest.fail("Known MRO and absence of receiver writes already exclude this member")
+
+    monkeypatch.setattr(Analysis, "__init__", fail)
+    planned = query("show", "WorkerBase.get_model", source=source, status=1)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+
+
+@pytest.mark.parametrize("assignment", [
+    "WorkerBase.callback = target\n",
+    "key = 'callback'\nsetattr(WorkerBase, key, target)\n",
+    "def install(cls):\n setattr(cls, 'callback', target)\ninstall(WorkerBase)\n",
+    "getattr = setattr\ngetattr(WorkerBase, 'callback', target)\n",
+    "def key(): return 'callback'\nsetattr(WorkerBase, key(), target)\n",
+])
+def test_known_mro_missing_declaration_keeps_receiver_writes(monkeypatch, assignment):
+    source = "def target(): return 1\nclass WorkerBase: pass\n" + assignment
+    planned = query("show", "WorkerBase.callback", source=source)
+    monkeypatch.setattr(Workspace, "flow_candidate", lambda *_args: True)
+    exhaustive = query("show", "WorkerBase.callback", source=source)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+
+
+def test_ambiguous_member_receiver_does_not_start_flow(repository, monkeypatch):
+    write(repository, "left.py", "class Worker: pass\n")
+    write(repository, "right.py", "class Worker: pass\ndef callback(): pass\n")
+    git(repository, "add", "left.py", "right.py")
+    git(repository, "commit", "-qm", "two possible receivers")
+
+    def fail(*_args):
+        pytest.fail("Receiver ambiguity does not require evaluating module bodies")
+
+    monkeypatch.setattr(Analysis, "__init__", fail)
+    result = query("show", "HEAD:Worker.callback", "--repo", str(repository), status=2)
+    assert result["error"]["status"] == "ambiguous"
+    assert {item["symbol"] for item in result["error"]["candidates"]} >= {"left.Worker", "right.Worker"}
+
+
+def test_missing_member_does_not_expand_the_next_batch_catalog(repository, monkeypatch):
+    write(repository, "src/pkg/worker.py", "from . import extra\nclass Worker:\n def run(self): return 1\n")
+    write(repository, "src/pkg/extra.py", "import pkg\nfrom . import idle\ndef missing(): pass\n")
+    write(repository, "src/pkg/idle.py", "import pkg\ndef unrelated(): return 2\n")
+    git(repository, "add", "src/pkg/worker.py", "src/pkg/extra.py", "src/pkg/idle.py")
+    git(repository, "commit", "-qm", "a flow dependency unrelated to the requested declarations")
+    cataloged = set()
+    original = Catalog.__init__
+
+    def record(self, sources):
+        sources = list(sources)
+        cataloged.update(source.module for source in sources)
+        original(self, sources)
+
+    monkeypatch.setattr(Catalog, "__init__", record)
+    result = query("show", "HEAD:pkg.worker.Worker.missing", "HEAD:pkg.worker.Worker.run",
+                   "--repo", str(repository))
+    assert result["queries"][0]["status"] == "no_match"
+    assert result["queries"][1]["status"] == "ok"
+    # extra supplies a legitimate alternative for the missing leaf. idle has
+    # no matching declarations, even though it imports the same package root.
+    assert "pkg.idle" not in cataloged
+
+
+def test_readonly_class_and_safe_constructor_prove_absence_without_dependency_closure(repository, monkeypatch):
+    write(repository, "src/pkg/unique.py", "from . import worker\nclass Unique:\n"
+          " def __init__(self, config): self.config = config\n")
+    write(repository, "annotations.py", "from pkg.unique import Unique\n"
+          "def annotate(item: Unique) -> Unique: pass\nclass Derived(Unique): pass\n")
+    git(repository, "add", "src/pkg/unique.py", "annotations.py")
+    git(repository, "commit", "-qm", "only type and base references to a static class")
+
+    def fail(*_args, **_kwargs):
+        pytest.fail("The complete reference proof already excludes a concrete member binding")
+
+    monkeypatch.setattr(Workspace, "analysis_sources", fail)
+    result = query("show", "HEAD:Unique.absent", "--repo", str(repository), status=1)
+    proof = result["coverage"]["negative_member_proofs"][0]
+    assert proof["member"] == "absent"
+    assert {source["module"] for source in proof["sources"]} == {"pkg.unique", "annotations"}
+
+
+@pytest.mark.parametrize("source", [
+    "def target(): return 1\ndef install(c): c.callback = target\nclass Unique: pass\ninstall(Unique)\n",
+    ("def target(): return 1\ndef install(c): c.callback = target\n"
+     "class Unique:\n def __init__(self): install(self)\n"),
+])
+def test_absence_proof_preserves_class_and_constructor_escape(source, monkeypatch):
+    from pyrel import member_lookup
+
+    planned = query("show", "Unique.callback", source=source)
+    monkeypatch.setattr(member_lookup, "absent_member", lambda *_args: False)
+    exhaustive = query("show", "Unique.callback", source=source)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+
+
+def test_absence_proof_does_not_ignore_star_rebinding_of_a_class(repository, monkeypatch):
+    from pyrel import member_lookup
+
+    write(repository, "src/pkg/start.py", "class Unique: pass\nfrom .overwrite import *\n")
+    write(repository, "src/pkg/overwrite.py", "class Unique:\n def callback(self): return 'rebound'\n")
+    git(repository, "add", "src/pkg/start.py", "src/pkg/overwrite.py")
+    git(repository, "commit", "-qm", "a star import replaces the earlier class")
+    args = ("show", "HEAD:pkg.start.Unique.callback", "--repo", str(repository))
+    planned = query(*args)
+    monkeypatch.setattr(member_lookup, "absent_member", lambda *_args: False)
+    exhaustive = query(*args)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+
+
+def test_external_base_without_own_member_stays_unresolved_without_flow(monkeypatch):
+    source = ("from unavailable import External\nclass Worker(External):\n"
+              " def __init__(self, config):\n  super().__init__(config)\n  self.config = config\n")
+
+    def fail(*_args):
+        pytest.fail("The full input cannot establish a definition in an unavailable external base")
+
+    monkeypatch.setattr(Analysis, "__init__", fail)
+    result = query("show", "Worker.callback", source=source, status=1)
+    assert result["status"] == "no_match"
+    assert any(row["kind"] == "unresolved" and "External" in row["message"] for row in result["diagnostics"])
+    assert result["coverage"]["unresolved_member_proofs"][0]["external_module"] == "unavailable"
+
+
+@pytest.mark.parametrize("definition", [
+    "class Worker(External):\n def __init__(self): self.callback = target\n",
+    ("def install(obj): obj.callback = target\n"
+     "class Worker(External):\n def __init__(self): install(self)\n"),
+    "class Worker(External): pass\nWorker.callback = target\n",
+])
+def test_external_base_preflight_preserves_resolvable_own_bindings(definition, monkeypatch):
+    from pyrel import member_lookup
+
+    source = "from unavailable import External\ndef target(): return 1\n" + definition
+    planned = query("show", "Worker.callback", source=source)
+    monkeypatch.setattr(member_lookup, "unresolved_member", lambda *_args: None)
+    exhaustive = query("show", "Worker.callback", source=source)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+
+
+def test_external_base_preflight_does_not_hide_a_rebound_base(monkeypatch):
+    from pyrel import member_lookup
+
+    source = ("from unavailable import External\nclass Known:\n def callback(self): return 1\n"
+              "External = Known\nclass Worker(External): pass\n")
+    planned = query("show", "Worker.callback", source=source)
+    monkeypatch.setattr(member_lookup, "unresolved_member", lambda *_args: None)
+    exhaustive = query("show", "Worker.callback", source=source)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+
+
+@pytest.mark.parametrize("definition", [
+    "from .base import Root\nclass Child(Root): pass\n",
+    "from .base import Root as Alias\nclass Child(Alias): pass\n",
+    "from .base import Root\nAlias = Root\nclass Child(Alias): pass\n",
+    "from .base import Root\nclass Left(Root): pass\nclass Right(Root): pass\nclass Child(Left, Right): pass\n",
+    "from .base import Root\nclass Child(Root):\n def needle(self): return 2\nclass Grandchild(Child): pass\n",
+])
+def test_bare_member_uses_ty_descendants_without_cataloging_unrelated_files(repository, monkeypatch, definition):
+    from pyrel import planning
+
+    write(repository, "src/pkg/base.py", "class Root:\n def needle(self): return 1\n")
+    write(repository, "src/pkg/child.py", definition)
+    for number in range(12):
+        write(repository, f"noise/other{number}.py", f"class Other{number}: pass\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "inherited member outside its declaration file")
+    args = ("show", "HEAD:needle", "--repo", str(repository))
+    with monkeypatch.context() as patch:
+        patch.setattr(Workspace, "all", lambda *_args: pytest.fail("unrelated declarations are not descendants"))
+        planned = query(*args)
+    monkeypatch.setattr(planning, "descendant_candidates", lambda *_args: None)
+    exhaustive = query(*args)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)
+    selected = {record.get("selected_as") for group in planned["queries"] for record in group["selections"]}
+    # Assignment aliases require the existing flow fallback for a qualified
+    # address; ty's declaration-only MRO does not project them into bare names.
+    if "Alias = Root" in definition:
+        direct = query("show", "HEAD:pkg.child.Child.needle", "--repo", str(repository))
+        assert any("def needle" in row.get("code", "") for row in direct["results"])
+    else:
+        assert "pkg.child.Child.needle" in selected
+    assert (planned["queries"][0]["coverage"][0]["analyzed_files"]
+            < exhaustive["queries"][0]["coverage"][0]["analyzed_files"])
 
 
 def test_path_sets_plan_the_union_without_analyzing_unrelated_modules(repository, monkeypatch):

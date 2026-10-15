@@ -106,14 +106,36 @@ class Source:
 
     @cached_property
     def syntax(self):
-        return tuple(ast.walk(self.tree))
+        return self.tree_index[0]
+
+    @cached_property
+    def tree_index(self):
+        """Share child discovery across syntax, dependency and lexical scans."""
+        from collections import deque
+
+        pending, nodes, children = deque([self.tree]), [], {}
+        while pending:
+            node = pending.popleft()
+            nodes.append(node)
+            if node not in children:
+                found = []
+                for field in node._fields:
+                    value = getattr(node, field, None)
+                    if isinstance(value, ast.AST):
+                        found.append(value)
+                    elif isinstance(value, list):
+                        found.extend(child for child in value if isinstance(child, ast.AST))
+                children[node] = tuple(found)
+            pending.extend(children[node])
+        return tuple(nodes), children
 
     @cached_property
     def lexical_nodes(self):
         """Definition children and owned AST nodes, shared by query analyses."""
         definitions, owned = {}, {}
         scopes = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
-        pending = [(child, self.tree) for child in reversed(list(ast.iter_child_nodes(self.tree)))]
+        children = self.tree_index[1]
+        pending = [(child, self.tree) for child in reversed(children[self.tree])]
         while pending:
             node, owner = pending.pop()
             if isinstance(node, scopes):
@@ -121,13 +143,25 @@ class Source:
                 owner = node
             else:
                 owned.setdefault(owner, []).append(node)
-            pending.extend((child, owner) for child in reversed(list(ast.iter_child_nodes(node))))
+            pending.extend((child, owner) for child in reversed(children[node]))
         return ({node: tuple(children) for node, children in definitions.items()},
                 {node: tuple(children) for node, children in owned.items()})
 
     @cached_property
     def imports(self):
         return tuple(n for n in self.syntax if isinstance(n, (ast.Import, ast.ImportFrom)))
+
+    @cached_property
+    def eager_imports(self):
+        """Imports evaluated by a module/class body, excluding deferred functions."""
+        found, pending = [], [self.tree]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                found.append(node)
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                pending.extend(ast.iter_child_nodes(node))
+        return tuple(found)
 
     @cached_property
     def declarations(self):
@@ -157,6 +191,37 @@ class Source:
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
                 names.update(node.value.split("."))
         return names
+
+    @cached_property
+    def attribute_writes(self):
+        """Possible concrete keys in the flow engine's receiver attribute state.
+
+        Direct stores carry their key in the AST. setattr/delattr can propagate
+        a literal through aliases, calls or containers, so retain every string
+        constant too. Computed/unknown names do not establish a concrete binding.
+        """
+        read_keys = set()
+        if not self.guards["star"]:
+            # A key passed to the unshadowed read-only builtins cannot establish
+            # a receiver write. Keep the literal if the name is rebound in any
+            # scope, or if a star import could shadow it.
+            for node in self.syntax:
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id in {"getattr", "hasattr"}
+                        and node.func.id not in self.declared_names and len(node.args) >= 2):
+                    read_keys.add(id(node.args[1]))
+        return frozenset(
+            node.attr if isinstance(node, ast.Attribute) else node.value
+            for node in self.syntax
+            if (isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)))
+            or (isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in read_keys)
+        )
+
+    @cached_property
+    def scope_names(self):
+        """Names that can own lexical declarations (aliases cannot own them)."""
+        return frozenset(node.name for node in self.syntax
+                         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)))
 
     @cached_property
     def declared_names(self):

@@ -89,7 +89,7 @@ def matches(ws, pattern, matcher, *, kinds=(), follow_import=True, mode="glob"):
         inherited_inputs(ws, pattern, mode, matcher)
     entries = [
         e
-        for e in ws.catalog.entries
+        for e in ws.query_catalog(pattern, mode, matcher).entries
         if (not kinds or e.kind in kinds)
         and (not ws.selection_files or e.source.provenance.get("git_path") in ws.selection_files)
     ]
@@ -97,8 +97,16 @@ def matches(ws, pattern, matcher, *, kinds=(), follow_import=True, mode="glob"):
     # A module also has a file address, kept in the same matching/dedup pipeline.
     modules = [e for e in entries if e.kind == "module"]
     file_names = [e.source.provenance.get("git_path", e.source.name) for e in modules]
+    scoped_files = set()
     if mode == "glob":
         candidates += [modules[i] for i in matcher.indices(pattern, file_names, domain="file")]
+        if ws.selection_files:
+            for expression in braces(pattern):
+                if "/" not in expression and expression.endswith((".py", ".pyi")):
+                    indices = matcher.indices(expression, [PurePosixPath(p).name for p in file_names], domain="file")
+                    candidates += [modules[i] for i in indices]
+                    if indices:
+                        scoped_files.add(expression)
     resolved = {}
     for candidate in ordered(candidates):
         entry = ws.follow_import(candidate) if follow_import and candidate.kind == "import" else candidate
@@ -111,6 +119,8 @@ def matches(ws, pattern, matcher, *, kinds=(), follow_import=True, mode="glob"):
     # Explicit inherited/aliased addresses keep their receiver, rather than
     # pretending their implementation is a declaration in the subclass.
     for expression in braces(pattern) if mode == "glob" else [pattern]:
+        if expression in scoped_files:
+            continue
         literal = literal_address(expression, mode)
         if not literal or "." not in literal or any(
             matcher.indices(literal, [entry.name, receiver + "." + entry.name.rsplit(".", 1)[-1]])

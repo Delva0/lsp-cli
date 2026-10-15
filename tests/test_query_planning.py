@@ -9,6 +9,37 @@ from .test_git_sources import git, write
 from .test_git_sources import repository as repository  # noqa: PLC0414
 
 
+@pytest.mark.parametrize("pattern", ["**.ping", "*.ping", "**.leaf"])
+def test_glob_listing_with_literal_leaf_matches_full_inventory(repository, monkeypatch, pattern):
+    write(repository, "extra.py", "class Child:\n def ping(self): pass\n")
+    write(repository, "other/leaf/nested.py", "class Nested: pass\n")
+    write(repository, "unicode.py", "def ｐｉｎｇ(): pass\n")
+    for number in range(40):
+        write(repository, f"noise/f{number}.py", "def unused(): pass\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "scoped leaf glob")
+    args = ["list", "HEAD:" + pattern, "--repo", str(repository), "-r"]
+    result = query(*args, "--max-files", "12")
+    coverage = [c for q in result["queries"] for c in q["coverage"]]
+    assert coverage and all(c["complete"] and c["analyzed_files"] < 12 for c in coverage)
+    monkeypatch.setattr(batch, "candidate_paths", lambda loader, *_args, **_kwargs: set(loader.paths))
+    exhaustive = query(*args)
+    assert result["results"] == exhaustive["results"]
+
+
+def test_filename_in_explicit_file_scope_does_not_expand_dependencies(repository, monkeypatch):
+    from pyrel.workspace import Workspace
+
+    write(repository, "nested/task.py", "from pkg.base import Base\nclass Child(Base): pass\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "scoped filename")
+    monkeypatch.setattr(Workspace, "analysis_sources", lambda *_a, **_kw: pytest.fail("filename expanded dependencies"))
+    result = query("show", "HEAD:task.py", "--files", "nested/task.py", "--repo", str(repository))
+    explicit = query("show", "HEAD:nested/task.py", "--repo", str(repository))
+    assert result["results"] == explicit["results"]
+    assert result["coverage"]["analyzed_files"] == 1
+
+
 def test_direct_reads_do_not_spend_the_file_budget_on_unrelated_code(repository):
     write(repository, "api.py", "class API:\n def run(self): return 1\n")
     for i in range(150):
