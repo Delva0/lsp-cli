@@ -1,11 +1,11 @@
 {
   "source": "Graphub v5/clis/pyrel and v5/lsp",
-  "source_commit": "4b744d9325b1c1e13dab4034513587e6ac2ab61c",
-  "tool_version": "0.18.15",
+  "source_commit": "171c918b24e2146040713f2ca34340fddf6a95ad",
+  "tool_version": "0.18.16",
   "source_files": {
     "v5/clis/pyrel/__init__.py": {
       "path": "src/pyrel/__init__.py",
-      "sha256": "7c29fa68e8298d4df981ae16f0e53adc53c249c718244ed77d7b3388ad84ed4c"
+      "sha256": "dbb563aa4589fe03909a550718ed899f751fd3f984d2e3cd9520ef886f858584"
     },
     "v5/clis/pyrel/__main__.py": {
       "path": "src/pyrel/__main__.py",
@@ -133,7 +133,7 @@
     },
     "v5/clis/pyrel/selectors.py": {
       "path": "src/pyrel/selectors.py",
-      "sha256": "2f025aee0ae34af8339f0ff64ee7ee528c1084ec7ae531f6556d58b940acf106"
+      "sha256": "d428ac9cd15e34add08e983b4d48eba928a41a18ab86396c03767797caadba58"
     },
     "v5/clis/pyrel/semantics.py": {
       "path": "src/pyrel/semantics.py",
@@ -141,7 +141,7 @@
     },
     "v5/clis/pyrel/service.py": {
       "path": "src/pyrel/service.py",
-      "sha256": "17a5afe2abc1572cf32aa7604127e925e5ff48326386cbd7bd73a2930db283d1"
+      "sha256": "7a44ece5b465c3550d4123eff64f1c4e93b9bb43c4b49d159da4c245a0ac0d5a"
     },
     "v5/clis/pyrel/session.py": {
       "path": "src/pyrel/session.py",
@@ -157,7 +157,7 @@
     },
     "v5/clis/pyrel/workspace.py": {
       "path": "src/pyrel/workspace.py",
-      "sha256": "b29f91b08f7b181b996de069cc9b1ba9a7cae4730ccbffeb6a62486ff26af07d"
+      "sha256": "ab514a4b2d575f3b79eca6d0c00e2e05f603273d90221e5ba462d567323e7823"
     },
     "v5/lsp/__init__.py": {
       "path": "src/graphub_lsp/__init__.py",

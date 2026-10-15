@@ -32,6 +32,28 @@ def test_invalid_regex_does_not_discard_other_queries():
     assert result["queries"][1]["errors"]
 
 
+def test_invalid_symbol_braces_fail_before_loading_a_revision(monkeypatch):
+    from pyrel import batch
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("An invalid symbol set must not load any repository sources")
+
+    monkeypatch.setattr(batch, "revision_job", unexpected)
+    for args in (("show", "HEAD:{ParallelConfig}"), ("list", "HEAD:Class.{method}"),
+                 ("path", "HEAD:start", "{end}")):
+        result = query(*args, status=2)
+        assert "Invalid symbol set" in result["queries"][0]["errors"][0]["message"]
+
+
+def test_invalid_symbol_braces_do_not_discard_valid_queries():
+    result = query("show", "leaf", "{leaf}", status=2)
+    assert result["queries"][0]["status"] == "ok"
+    assert result["queries"][1]["errors"]
+    for args in (["where", "HEAD:pkg/{literal}.py:2"], ["show", "HEAD:pkg/{literal}.py"],
+                 ["show", "-e", "HEAD:fo{2,3}"]):
+        assert expand(parser().parse_args(args))
+
+
 def test_revision_set_is_internal_stable_and_deduplicated(repository):
     result = query("show", "{v2,v1,v2}:Base.ping", "--repo", str(repository))
     assert [q["revision"] for q in result["queries"]] == ["v2", "v1"]

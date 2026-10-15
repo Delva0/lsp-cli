@@ -288,19 +288,36 @@ class Workspace:
         # relationships unavailable from a source-only lookup.
         unresolved_reason = None
         try:
-            sources = self.analysis_sources([selector])
+            if self.loader and unresolved_entry:
+                from .member_lookup import unresolved_member
+
+                unresolved_reason = unresolved_member(self, unresolved_entry, member, None)
+                if unresolved_reason:
+                    raise SelectionError(unresolved_reason, "unresolved")
+            sources = self.analysis_sources([selector], eager=bool(self.loader))
+            # A negative lexical preflight needs the complete import input: a
+            # deferred import could supply the otherwise absent binding key.
+            possible = self.flow_candidate(selector, sources)
+            if self.loader and not possible:
+                sources = self.analysis_sources([selector])
+                possible = self.flow_candidate(selector, sources)
             if unresolved_entry:
                 from .member_lookup import unresolved_member
 
-                unresolved_reason = unresolved_member(self, unresolved_entry, member, sources)
+                # Only the complete-input branch can support this absence proof.
+                unresolved_reason = (unresolved_member(self, unresolved_entry, member, sources)
+                                     if not self.loader or not possible else None)
                 if unresolved_reason:
                     raise SelectionError(unresolved_reason, "unresolved")
-            if not self.flow_candidate(selector, sources):
+            if not possible:
                 raise SelectionError(f"No binding can establish {selector!r}")
-            analysis = self.flow_analysis(sources)
             from .discovery import Index
 
-            selected = Index(analysis).select(selector)
+            if self.loader:
+                analysis, selected = self.demanded_analysis([selector], lambda a: Index(a).select(selector))
+            else:
+                analysis = self.flow_analysis(sources)
+                selected = Index(analysis).select(selector)
             if len(selected) == 1:
                 symbol, _receiver = selected[0]
                 for source in analysis.sources:
@@ -343,14 +360,23 @@ class Workspace:
         return self.flow_analyses[key]
 
     def call_analysis(self, selectors, scopes):
-        """Close dependencies over evaluated imports before accepting call edges.
+        def evaluate(analysis):
+            for _source, entry, receiver in scopes:
+                if entry.name in analysis.symbols:
+                    analysis.summary(analysis.symbols[entry.name], receiver)
+
+        return self.demanded_analysis(selectors, evaluate, scopes)[0]
+
+    def demanded_analysis(self, selectors, evaluate, scopes=()):
+        """Close dependencies over evaluated imports before accepting bindings.
 
         Module bodies are always included. Function-local imports enter when a
         requested function or one of its callees is evaluated. Newly discovered
         input invalidates provisional bindings; repeat until no input is missing.
         """
         if not self.loader:
-            return self.analysis(selectors)
+            analysis = self.analysis(selectors)
+            return analysis, evaluate(analysis)
         key = tuple(selectors)
         if key not in self.call_loaders:
             self.call_loaders[key] = self.session.git(self.args, self.args.rev)
@@ -364,9 +390,13 @@ class Workspace:
         while True:
             sources, _metadata, diagnostics = loader.collect("path", [], sorted(files), eager=True)
             analysis = self.flow_analysis(sources)
-            for _source, entry, receiver in scopes:
-                if entry.name in analysis.symbols:
-                    analysis.summary(analysis.symbols[entry.name], receiver)
+            failure = None
+            try:
+                value = evaluate(analysis)
+            except ValueError as error:
+                # A missing binding can become available after a deferred import.
+                # Do not return provisional success or failure before closure.
+                failure = error
             requested = {path for module in analysis.requested_modules for path in loader.with_packages(module)}
             files = requested - loader.loaded.keys() - loader.failed - loader.omitted
             if not files:
@@ -375,7 +405,9 @@ class Workspace:
                 self.loader.failed.update(loader.failed)
                 for source in sources:
                     self.loaded.setdefault(source.provenance["git_path"], source)
-                return analysis
+                if failure is not None:
+                    raise failure
+                return analysis, value
 
     def analysis_files(self, selectors):
         files = [s.provenance["git_path"] for s in self.sources]
@@ -440,11 +472,11 @@ class Workspace:
 
         return matching(self.lookup(selector), selector)
 
-    def analysis_sources(self, selectors=(), *, reverse=False):
+    def analysis_sources(self, selectors=(), *, reverse=False, eager=False):
         if self.loader:
             loader = self.session.git(self.args, self.args.rev)
             files = self.analysis_files(selectors)
-            sources, _metadata, diagnostics = loader.collect("refs" if reverse else "path", [], files)
+            sources, _metadata, diagnostics = loader.collect("refs" if reverse else "path", [], files, eager=eager)
             self.diagnostics.extend(diagnostics)
             self.loader.omitted.update(loader.omitted)
             self.loader.failed.update(loader.failed)

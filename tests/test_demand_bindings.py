@@ -131,3 +131,40 @@ def test_compiler_scopes_are_reused_only_for_identical_source_objects(monkeypatc
     assert LexicalFacts([old]).local_names("input.f") == {"old_name"}
     assert LexicalFacts([new]).local_names("input.f") == {"new_name"}
     assert compiled == [old.text, new.text]
+
+
+@pytest.mark.parametrize(("selector", "entry", "worker", "status"), [
+    ("entry.Alias.run", "from factory import create\nAlias = create()\n",
+     "class Worker:\n def run(self): return 1\n", 0),
+    ("entry.Wrapper.child.run", ("from factory import create\nclass Wrapper:\n"
+     " def __init__(self): self.child = create()()\n"),
+     "class Worker:\n def run(self): return 1\n", 0),
+    ("entry.Alias.run", "from factory import create\nAlias = create()\n",
+     "from unavailable import Base\nclass Worker(Base):\n def run(self): return 1\n", 0),
+    ("entry.Alias.absent", "from factory import create\nAlias = create()\n",
+     "from unavailable import Base\nclass Worker(Base): pass\n", 1),
+    ("entry.Alias.run", "from factory import create\nAlias = create()\n",
+     "from base import Parent\nclass Worker(Parent): pass\n", 0),
+])
+def test_member_selection_closes_deferred_imports_before_returning(
+    repository, monkeypatch, selector, entry, worker, status,
+):
+    write(repository, "entry.py", entry)
+    write(repository, "factory.py", "def create():\n from worker import Worker\n return Worker\n"
+          "def unused():\n import noise\n return noise\n")
+    write(repository, "worker.py", worker)
+    write(repository, "base.py", "class Parent:\n def run(self): return 1\n")
+    write(repository, "noise.py", "def never_called(): return 2\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "class aliases from deferred factory imports")
+    args = ("show", "HEAD:" + selector, "--repo", str(repository))
+    planned = query(*args, status=status)
+
+    def exhaustive_analysis(self, selectors, evaluate, scopes=()):
+        analysis = self.analysis(selectors)
+        return analysis, evaluate(analysis)
+
+    monkeypatch.setattr(Workspace, "demanded_analysis", exhaustive_analysis)
+    exhaustive = query(*args, status=status)
+    for key in ("results", "heads", "status"):
+        assert planned.get(key) == exhaustive.get(key)

@@ -94,6 +94,22 @@ def inputs(args):
     return [(s, "fixed" if args.fixed_strings else mode) for s, mode in values]
 
 
+def symbol_patterns(pattern, mode):
+    """Validate sets before an impossible symbol pattern can scan a repository."""
+    patterns = braces(pattern) if mode == "glob" else [pattern]
+    if mode == "glob" and "/" not in pattern and not pattern.endswith((".py", ".pyi")):
+        for selected in patterns:
+            # File names may contain literal braces. Python symbol components
+            # cannot; remaining braces are not comma sets (nor regex syntax).
+            outside_classes = re.sub(r"\[[^\]]*\]", "", selected)
+            if "{" in outside_classes or "}" in outside_classes:
+                raise ValueError(
+                    f"Invalid symbol set {pattern!r}: use a name without braces for one symbol, "
+                    "or {A,B} for multiple symbols; use -e for a regular expression",
+                )
+    return patterns
+
+
 def expand(args, values=None):
     values = inputs(args) if values is None else values
     if args.command == "path":
@@ -106,6 +122,8 @@ def expand(args, values=None):
         revision, pattern = prefix(source, args.rev)
         if not pattern or not destination:
             raise ValueError("path requires two nonempty targets")
+        symbol_patterns(pattern, mode)
+        symbol_patterns(destination, destination_mode)
         # Keep each endpoint's set intact: matching returns a union and the path
         # engine traverses once per start, not once per brace-expanded pair.
         spec = Selector(source, revision, pattern, destination, mode=mode, destination_mode=destination_mode)
@@ -131,9 +149,11 @@ def expand(args, values=None):
                 old, new = rev.split("..", 1)
                 if not old or not new or new.startswith(".") or ".." in new:
                     raise ValueError("diff requires exactly two revisions: OLD..NEW:TARGET")
+            patterns = ((braces(pattern) if mode == "glob" else [pattern])
+                        if args.command in {"where", "complete"} else symbol_patterns(pattern, mode))
             result.extend(
                 replace(spec, revision=rev, pattern=selected)
-                for selected in (braces(pattern) if mode == "glob" else [pattern])
+                for selected in patterns
             )
     return result
 

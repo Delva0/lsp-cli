@@ -16,7 +16,7 @@ Source is returned with its original file and line numbers. Versioned queries re
 Linux/macOS, Git and network access are required. The installer uses an isolated [uv tool environment](https://docs.astral.sh/uv/guides/tools/), installs uv if needed, and lets uv obtain Python 3.13. It does not modify shell startup files or require sudo.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.15/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.16/scripts/install.sh | bash
 ```
 
 If `lsp` is not on your PATH, use the path printed by the installer (normally `~/.local/bin/lsp`), or add that directory to PATH. Installation downloads the pinned analysis dependencies; it is not a single static executable. No embedding model is downloaded by the public actions.
@@ -24,13 +24,13 @@ If `lsp` is not on your PATH, use the path printed by the installer (normally `~
 Uninstall the isolated tool, keeping uv, Python, your repositories and shared download caches:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.15/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.16/scripts/uninstall.sh | bash
 ```
 
 With uv already installed:
 
 ```bash
-uv tool install --python 3.13 'git+https://github.com/Delva0/lsp-cli.git@v0.18.15'
+uv tool install --python 3.13 'git+https://github.com/Delva0/lsp-cli.git@v0.18.16'
 uv tool uninstall lsp-cli
 ```
 
@@ -117,11 +117,11 @@ LSP_CLI_SOURCE="$PWD" bash scripts/install.sh
 `uv sync` installs the project editable for development. In a prepared Python 3.13 container, install the tagged source with pip and run from the mounted repository:
 
 ```bash
-python -m pip install 'git+https://github.com/Delva0/lsp-cli.git@v0.18.15'
+python -m pip install 'git+https://github.com/Delva0/lsp-cli.git@v0.18.16'
 cd /workspace/your-repository
 lsp list HEAD: --kinds class function
 ```
 
 Git must be installed in that container. Source queries do not require installing the target application's dependencies; missing external types may limit relationship resolution.
 
-This release carries the 0.18.15 analysis implementation. `upstream-source.json` records original source hashes; tests are carried over with package import paths adapted. Licensed under MIT; dependency licenses remain their own.
+This release carries the 0.18.16 analysis implementation. `upstream-source.json` records original source hashes; tests are carried over with package import paths adapted. Licensed under MIT; dependency licenses remain their own.

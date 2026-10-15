@@ -9,6 +9,7 @@ executable objects.
 
 import base64
 import fcntl
+import gc
 import hashlib
 import importlib.util
 import io
@@ -240,6 +241,10 @@ def execute(request, stream, shared):
 
 def serve(fd, path):
     inode = path.stat().st_ino
+    # The worker owns this process. AST-heavy queries keep most objects alive;
+    # the default 700-object nursery repeatedly scans that retained graph.
+    # Keep cyclic collection enabled, with a bounded, larger nursery.
+    gc.set_threshold(50_000, *gc.get_threshold()[1:])
 
     def terminate(_signum, _frame):
         raise KeyboardInterrupt
