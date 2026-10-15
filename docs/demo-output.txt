@@ -1,0 +1,373 @@
+
+$ lsp list v2:Client -r --kinds class method
+demo.Client	class	v2:demo.py:9:0-15:34
+demo.Client.send	method	v2:demo.py:11:4-15:34
+
+$ lsp show \{v1\,v2\}:Client.send
+v1:demo.py
+11 |     def send(self, value):
+12 |         self.last = value
+13 |         return super().send(value)
+
+v2:demo.py
+11 |     def send(self, value):
+12 |         if value is None:
+13 |             raise ValueError("missing value")
+14 |         self.last = value
+15 |         return super().send(value)
+
+$ lsp show v2:Client --roles doc
+v2:demo.py
+ 9 | class Client(Base):
+10 |     """A minimal client."""
+
+$ lsp show v2:Client.send --roles call write return raise
+v2:demo.py
+ 9 | class Client(Base):
+11 |     def send(self, value):
+12 |         if value is None:
+13 |             raise ValueError("missing value")
+     ValueError -> builtins.ValueError
+14 |         self.last = value
+15 |         return super().send(value)
+     super -> builtins.super
+     super().send -> demo.Base.send
+
+$ lsp refs v2:encode --roles call
+v2:demo.py
+1 | def encode(value):
+5 | class Base:
+6 |     def send(self, value):
+7 |         return encode(value)
+
+$ lsp inheritance v2:Client
+v2:demo.py:9:0-15:34 demo.Client
+MRO: demo.Client -> demo.Base -> builtins.object
+v2:demo.py:9:6-9:12 demo.Client implements demo.Base
+v2:demo.py:9:13-9:17 demo.Client inherits demo.Base
+v2:demo.py:11:8-11:12 demo.Client.send overrides demo.Base.send
+
+$ lsp path v2:start encode
+v2:demo.start -> demo.encode
+v2:demo.py
+found
+demo.start -> demo.Client.send	v2:demo.py:19:11-19:29
+demo.Client.send -> demo.Base.send	v2:demo.py:15:15-15:34
+demo.Base.send -> demo.encode	v2:demo.py:7:15-7:28
+
+v2:demo.py
+ 5 | class Base:
+ 6 |     def send(self, value):
+ 7 |         return encode(value)
+     encode -> demo.encode
+ 9 | class Client(Base):
+11 |     def send(self, value):
+15 |         return super().send(value)
+     super().send -> demo.Base.send
+17 | def start(value):
+19 |     return client.send(value)
+     client.send -> demo.Client.send
+
+$ lsp history v2:Client.send -n 2
+v2:demo.py:11:0-15:34 HISTORY demo.Client.send (Git line history from this definition)
+2474a47f2a79211bbed7e1833d21408709b7cc30 2026-10-15T13:30:58+08:00 lsp-cli demo | Validate values before sending
+c9e12f3a1f4e4ac13fd590438a5902c231b216b9 2026-10-15T13:30:58+08:00 lsp-cli demo | Add client and entry point
+
+$ lsp diff v1..v2:Client.send
+v1:demo.py
+
+v2:demo.py
+DIFF modified
+--- v1:demo.py
++++ v2:demo.py
+@@ -11,3 +11,5 @@
+     def send(self, value):
++        if value is None:
++            raise ValueError("missing value")
+         self.last = value
+         return super().send(value)
+
+$ lsp show v2:Client.send --blame --roles write
+v2:demo.py
+ 9 c9e12f3a1f4e (lsp-cli demo) | class Client(Base):
+11 c9e12f3a1f4e (lsp-cli demo) |     def send(self, value):
+14 c9e12f3a1f4e (lsp-cli demo) |         self.last = value
+
+$ lsp where v2:demo.py:14:8
+v2:demo.py:14:8-14:8
+demo	v2:demo.py:1:0-19:29
+demo.Client	v2:demo.py:9:0-15:34
+demo.Client.send	v2:demo.py:11:4-15:34
+v2:demo.py
+14 |         self.last = value
+-> demo.Client.send.self	v2:demo.py:11:13-11:17
+
+$ lsp complete v2:demo.py:19:18
+v2:demo.py:19:18-19:18
+
+$ lsp list v2:Client --json
+{
+  "schema_version": 3,
+  "command": "list",
+  "queries": [
+    {
+      "input": "v2:Client",
+      "revision": "v2",
+      "pattern": "Client",
+      "matching": "glob",
+      "status": "ok",
+      "matches": [
+        {
+          "symbol": "demo.Client",
+          "kind": "class",
+          "parent": "demo",
+          "source": "v2:demo.py",
+          "line": 9,
+          "column": 0,
+          "end_line": 15,
+          "end_column": 34,
+          "selection": {
+            "source": "v2:demo.py",
+            "line": 9,
+            "column": 6,
+            "end_line": 9,
+            "end_column": 12
+          }
+        }
+      ],
+      "result_indices": [
+        0,
+        1,
+        2
+      ],
+      "coverage": [
+        {
+          "repository": "/tmp/lsp-cli-demo.6fQrtc7Y",
+          "revision": "v2",
+          "commit": "2474a47f2a79211bbed7e1833d21408709b7cc30",
+          "scope": "selected_revision",
+          "complete": true,
+          "discovered_files": 1,
+          "analyzed_files": 1,
+          "parsed_files": 1,
+          "read_files": 1,
+          "omitted_files": [],
+          "failed_files": [],
+          "import_roots": [
+            "."
+          ]
+        }
+      ],
+      "backends": [
+        {
+          "name": "source",
+          "methods": []
+        }
+      ],
+      "selections": [
+        {
+          "symbol": {
+            "symbol": "demo.Client",
+            "kind": "class",
+            "parent": "demo",
+            "source": "v2:demo.py",
+            "line": 9,
+            "column": 0,
+            "end_line": 15,
+            "end_column": 34,
+            "selection": {
+              "source": "v2:demo.py",
+              "line": 9,
+              "column": 6,
+              "end_line": 9,
+              "end_column": 12
+            }
+          },
+          "heads": [
+            {
+              "symbol": "demo.Client",
+              "kind": "class",
+              "parent": "demo",
+              "source": "v2:demo.py",
+              "line": 9,
+              "column": 0,
+              "end_line": 15,
+              "end_column": 34,
+              "selection": {
+                "source": "v2:demo.py",
+                "line": 9,
+                "column": 6,
+                "end_line": 9,
+                "end_column": 12
+              }
+            }
+          ],
+          "scope": "demo.Client",
+          "kinds": [],
+          "truncated": true,
+          "matched": 5,
+          "returned": 3,
+          "max_depth": 1,
+          "result_indices": [
+            0,
+            1,
+            2
+          ]
+        }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "symbol": "demo.Client",
+      "kind": "class",
+      "parent": "demo",
+      "source": "v2:demo.py",
+      "line": 9,
+      "column": 0,
+      "end_line": 15,
+      "end_column": 34,
+      "selection": {
+        "source": "v2:demo.py",
+        "line": 9,
+        "column": 6,
+        "end_line": 9,
+        "end_column": 12
+      }
+    },
+    {
+      "symbol": "demo.Client.send",
+      "kind": "method",
+      "parent": "demo.Client",
+      "source": "v2:demo.py",
+      "line": 11,
+      "column": 4,
+      "end_line": 15,
+      "end_column": 34,
+      "selection": {
+        "source": "v2:demo.py",
+        "line": 11,
+        "column": 8,
+        "end_line": 11,
+        "end_column": 12
+      }
+    },
+    {
+      "symbol": "demo.Client.last",
+      "kind": "field",
+      "parent": "demo.Client",
+      "source": "v2:demo.py",
+      "line": 14,
+      "column": 8,
+      "end_line": 14,
+      "end_column": 25,
+      "selection": {
+        "source": "v2:demo.py",
+        "line": 14,
+        "column": 13,
+        "end_line": 14,
+        "end_column": 17
+      }
+    }
+  ],
+  "heads": [
+    {
+      "symbol": "demo.Client",
+      "kind": "class",
+      "parent": "demo",
+      "source": "v2:demo.py",
+      "line": 9,
+      "column": 0,
+      "end_line": 15,
+      "end_column": 34,
+      "selection": {
+        "source": "v2:demo.py",
+        "line": 9,
+        "column": 6,
+        "end_line": 9,
+        "end_column": 12
+      }
+    }
+  ],
+  "sources": [
+    {
+      "source": "v2:demo.py",
+      "module": "demo",
+      "module_origin": "git",
+      "sha256": "7bc225092df4016e46b13ea8396bbc011d598a826b811223d70acb5a70cd6b7d",
+      "git_commit": "2474a47f2a79211bbed7e1833d21408709b7cc30",
+      "git_blob": "ea0b8aa08c6f409c84d8f5e4370890c5ced0d0f6",
+      "git_path": "demo.py"
+    }
+  ],
+  "diagnostics": [],
+  "status": "ok",
+  "coverage": {
+    "repository": "/tmp/lsp-cli-demo.6fQrtc7Y",
+    "revision": "v2",
+    "commit": "2474a47f2a79211bbed7e1833d21408709b7cc30",
+    "scope": "selected_revision",
+    "complete": true,
+    "discovered_files": 1,
+    "analyzed_files": 1,
+    "parsed_files": 1,
+    "read_files": 1,
+    "omitted_files": [],
+    "failed_files": [],
+    "import_roots": [
+      "."
+    ]
+  },
+  "git": {
+    "repository": "/tmp/lsp-cli-demo.6fQrtc7Y",
+    "revision": "v2",
+    "commit": "2474a47f2a79211bbed7e1833d21408709b7cc30",
+    "scope": "selected_revision",
+    "complete": true,
+    "discovered_files": 1,
+    "analyzed_files": 1,
+    "parsed_files": 1,
+    "read_files": 1,
+    "omitted_files": [],
+    "failed_files": [],
+    "import_roots": [
+      "."
+    ]
+  },
+  "backend": {
+    "name": "source",
+    "methods": []
+  },
+  "symbol": {
+    "symbol": "demo.Client",
+    "kind": "class",
+    "parent": "demo",
+    "source": "v2:demo.py",
+    "line": 9,
+    "column": 0,
+    "end_line": 15,
+    "end_column": 34,
+    "selection": {
+      "source": "v2:demo.py",
+      "line": 9,
+      "column": 6,
+      "end_line": 9,
+      "end_column": 12
+    }
+  },
+  "scope": "demo.Client",
+  "kinds": [],
+  "max_depth": 1,
+  "recursive": false,
+  "matched": 5,
+  "returned": 3,
+  "truncated": true,
+  "input": "v2:Client",
+  "revision": "v2"
+}
+
+$ git show v1:demo.py | lsp show Client.send
+<stdin>
+11 |     def send(self, value):
+12 |         self.last = value
+13 |         return super().send(value)
