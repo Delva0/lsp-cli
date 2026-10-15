@@ -1,11 +1,11 @@
 {
   "source": "Graphub v5/clis/pyrel and v5/lsp",
-  "source_commit": "171c918b24e2146040713f2ca34340fddf6a95ad",
-  "tool_version": "0.18.16",
+  "source_commit": "9be3ec4b835ce80bea3c9f0b3ac933d8a55317ea",
+  "tool_version": "0.18.17",
   "source_files": {
     "v5/clis/pyrel/__init__.py": {
       "path": "src/pyrel/__init__.py",
-      "sha256": "dbb563aa4589fe03909a550718ed899f751fd3f984d2e3cd9520ef886f858584"
+      "sha256": "4f0ae0d1ed7f306ed2c44e60778ca2dc3d9580bbb9b7fb989ddcbe8b22aca335"
     },
     "v5/clis/pyrel/__main__.py": {
       "path": "src/pyrel/__main__.py",
@@ -13,7 +13,7 @@
     },
     "v5/clis/pyrel/analysis.py": {
       "path": "src/pyrel/analysis.py",
-      "sha256": "079801bfe5e903754a408334b29d7f62274d3be4f6ef7ed38d0bfc946fab82aa"
+      "sha256": "48da4d88c8adfd61f36fd8efd729cc6d90105b7a98822c8e425c9cd28049aac0"
     },
     "v5/clis/pyrel/backend.py": {
       "path": "src/pyrel/backend.py",
@@ -21,7 +21,7 @@
     },
     "v5/clis/pyrel/batch.py": {
       "path": "src/pyrel/batch.py",
-      "sha256": "d9d299bb0b6d968cb486e6265e278e46c105a1fb100a667eaf75f7982d514903"
+      "sha256": "7cb8fedd39a0196596de1fba6ad7ec2bbf45466105ac98aa053b727b80d68c2b"
     },
     "v5/clis/pyrel/cli.py": {
       "path": "src/pyrel/cli.py",
@@ -73,7 +73,7 @@
     },
     "v5/clis/pyrel/flow.py": {
       "path": "src/pyrel/flow.py",
-      "sha256": "29448c5673ccf3c5fddb166a1dd13b0684d28cebeb4cc5b6f569cbb7164a0eb9"
+      "sha256": "0e143796bef7713377c1bdca6e3463d01033b197d902c9133b5dd762531e8fc7"
     },
     "v5/clis/pyrel/git_queries.py": {
       "path": "src/pyrel/git_queries.py",
@@ -101,7 +101,7 @@
     },
     "v5/clis/pyrel/model.py": {
       "path": "src/pyrel/model.py",
-      "sha256": "70d71edf4a2b6d5ff1935f2819e52417b4eb37856cd84a3b40ed086e87866e88"
+      "sha256": "2a529f4705c61889cf1f01ee38e6085fc866c27d5a736ba2fc03aee67d205d74"
     },
     "v5/clis/pyrel/planning.py": {
       "path": "src/pyrel/planning.py",
@@ -157,7 +157,7 @@
     },
     "v5/clis/pyrel/workspace.py": {
       "path": "src/pyrel/workspace.py",
-      "sha256": "ab514a4b2d575f3b79eca6d0c00e2e05f603273d90221e5ba462d567323e7823"
+      "sha256": "934f3a8a158e73e2e9c0c8744ae39e3db118c4b4acf67dc1e46b7022f561214c"
     },
     "v5/lsp/__init__.py": {
       "path": "src/graphub_lsp/__init__.py",

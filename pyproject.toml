@@ -1,6 +1,6 @@
 [project]
 name = "lsp-cli"
-version = "0.18.16"
+version = "0.18.17"
 description = "Versioned Python symbols, source, bindings and execution events"
 readme = "README.md"
 requires-python = ">=3.13,<3.15"

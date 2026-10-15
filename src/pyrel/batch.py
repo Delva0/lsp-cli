@@ -136,6 +136,11 @@ def matches(ws, pattern, matcher, *, kinds=(), follow_import=True, mode="glob"):
         except SelectionError as error:
             if error.status not in {"not_found", "unresolved"}:
                 raise
+            if error.status == "unresolved":
+                diagnostic = {"kind": "unresolved", "symbol": literal, "message": str(error)}
+                if not any(row.get("kind") == "unresolved" and row.get("message") == str(error)
+                           for row in ws.diagnostics):
+                    ws.diagnostics.append(diagnostic)
     return list(resolved.values())
 
 

@@ -24,12 +24,16 @@ class Walker:
         self.receivers = {}
         if symbol.name not in analysis.scopes:
             self.locals = analysis.facts.local_names(symbol.name)
-            self.globals = set()
-            self.nonlocals = set()
-            self._scopes(symbol.node, root=True)
-            self.locals -= self.globals | self.nonlocals
+            key = symbol.node, frozenset(self.locals)
+            scopes = self.source.__dict__.setdefault("_flow_scopes", {})
+            if key not in scopes:
+                self.globals = set()
+                self.nonlocals = set()
+                self._scopes(symbol.node, root=True)
+                self.locals -= self.globals | self.nonlocals
+                scopes[key] = tuple(map(frozenset, (self.locals, self.globals, self.nonlocals)))
             # Lexical scopes are invariant across call arguments and query forks.
-            analysis.scopes[symbol.name] = tuple(map(frozenset, (self.locals, self.globals, self.nonlocals)))
+            analysis.scopes[symbol.name] = scopes[key]
         self.locals, self.globals, self.nonlocals = analysis.scopes[symbol.name]
 
     def _scopes(self, node, root=False):

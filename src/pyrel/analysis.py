@@ -101,24 +101,14 @@ class Analysis:
             self._collect(source.tree, symbol)
         for symbol in self.symbols.values():
             if isinstance(symbol.node, FUNCTIONS):
-                nodes = symbol.source.lexical_nodes[1].get(symbol.node, ())
-                if any(isinstance(node, (ast.Yield, ast.YieldFrom)) for node in nodes):
+                generated, writes, attributes = symbol.source.function_facts.get(
+                    symbol.node, (False, frozenset(), frozenset()),
+                )
+                if generated:
                     generators.add(symbol.name)
-                declared = {name for n in nodes if isinstance(n, ast.Global) for name in n.names}
-                written = {n.id for n in nodes if isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del))}
-                self.global_writes[symbol.source.module].update(declared & written)
-                params = [*symbol.node.args.posonlyargs, *symbol.node.args.args]
-                if symbol.owner and params and getattr(symbol.node, "name", "") != "__init__":
-                    self.mutable_fields.update(
-                        (symbol.owner, n.attr)
-                        for n in nodes
-                        if (
-                            isinstance(n, ast.Attribute)
-                            and isinstance(n.ctx, (ast.Store, ast.Del))
-                            and isinstance(n.value, ast.Name)
-                            and n.value.id == params[0].arg
-                        )
-                    )
+                self.global_writes[symbol.source.module].update(writes)
+                if symbol.owner and getattr(symbol.node, "name", "") != "__init__":
+                    self.mutable_fields.update((symbol.owner, attr) for attr in attributes)
         self.generators = frozenset(generators)
         # Each pass can propagate an import/re-export through another input.
         # A finite budget is visible, and unresolved facts never become edges.

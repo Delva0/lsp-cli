@@ -326,7 +326,7 @@ class Workspace:
                 if len(found) == 1:
                     return found[0]
         except (ValueError, NeedsBindingsError) as error:
-            if unresolved_reason or (isinstance(error, SelectionError) and error.status == "ambiguous"):
+            if unresolved_reason or (isinstance(error, SelectionError) and error.status in {"ambiguous", "unresolved"}):
                 raise
         alternatives = self.lookup(selector.rsplit(".", 1)[-1])
         status = "not_found" if self.metadata()["complete"] else "unresolved"

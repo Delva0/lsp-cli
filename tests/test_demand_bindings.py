@@ -168,3 +168,74 @@ def test_member_selection_closes_deferred_imports_before_returning(
     exhaustive = query(*args, status=status)
     for key in ("results", "heads", "status"):
         assert planned.get(key) == exhaustive.get(key)
+
+
+def test_rebuilt_analysis_reuses_lexical_effects_without_sharing_mutable_state():
+    from pyrel.analysis import Analysis
+    from pyrel.model import Source
+
+    source = Source("input.py", "input", """def target(): pass
+callback = target
+def replace():
+    global callback
+    callback = None
+def outer():
+    def inner():
+        yield target
+    return inner
+class Worker:
+    def __init__(self): self.callback = target
+    def replace(self): del self.callback
+""")
+    first = Analysis([source])
+    assert first.generators == {"input.outer.inner"}
+    assert first.global_writes["input"] == {"callback"}
+    assert first.mutable_fields == {("input.Worker", "callback")}
+    first.global_writes["input"].clear()
+    first.mutable_fields.clear()
+    second = Analysis([source, Source("new.py", "new", "def extra(): pass\n")])
+    assert second.generators == {"input.outer.inner"}
+    assert second.global_writes["input"] == {"callback"}
+    assert second.mutable_fields == {("input.Worker", "callback")}
+    changed = Analysis([Source("input.py", "input", "def outer(): return 1\n")])
+    assert not changed.generators and not changed.mutable_fields
+
+
+def test_unresolved_inherited_binding_keeps_its_reason_instead_of_silent_absence():
+    from .test_actions import invoke
+
+    source = "from unavailable import External\nclass Base(External):\n def run(self): pass\nclass Child(Base): pass\n"
+    result = query("show", "Child.run", source=source, status=1)
+    assert not result["results"]
+    assert any(d["kind"] == "unresolved" and "MRO" in d["message"] for d in result["diagnostics"])
+    status, output, error = invoke("show", "Child.run", source=source)
+    assert status == 1 and not output and "unresolved" in error and "MRO" in error
+
+
+def test_cached_scope_layout_respects_factories_and_global_nonlocal_declarations():
+    from pyrel.analysis import Analysis
+    from pyrel.lexical import LexicalFacts
+    from pyrel.model import Source
+
+    source = Source("input.py", "input", """global_value = 1
+def outer():
+    captured = 2
+    def inner():
+        global global_value
+        nonlocal captured
+        local = 3
+        return local + captured + global_value
+    return inner
+""")
+
+    class ExtraLocal(LexicalFacts):
+        def local_names(self, scope):
+            return super().local_names(scope) | {"injected"}
+
+    for factory, injected in ((LexicalFacts, False), (ExtraLocal, True), (LexicalFacts, False)):
+        analysis = Analysis([source], facts_factory=factory)
+        analysis.function("input.outer.inner")
+        local, global_, nonlocal_ = analysis.scopes["input.outer.inner"]
+        assert ("injected" in local) is injected
+        assert "local" in local and "captured" not in local and "global_value" not in local
+        assert global_ == {"global_value"} and nonlocal_ == {"captured"}

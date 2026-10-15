@@ -148,6 +148,29 @@ class Source:
                 {node: tuple(children) for node, children in owned.items()})
 
     @cached_property
+    def function_facts(self):
+        """Immutable lexical effects, reused when the dependency input grows."""
+        facts = {}
+        for scope, nodes in self.lexical_nodes[1].items():
+            if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            generated, declared, written, attributes = False, set(), set(), set()
+            params = [*scope.args.posonlyargs, *scope.args.args]
+            receiver = params[0].arg if params else None
+            for node in nodes:
+                if isinstance(node, (ast.Yield, ast.YieldFrom)):
+                    generated = True
+                elif isinstance(node, ast.Global):
+                    declared.update(node.names)
+                elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                    written.add(node.id)
+                elif (isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del))
+                      and isinstance(node.value, ast.Name) and node.value.id == receiver):
+                    attributes.add(node.attr)
+            facts[scope] = generated, frozenset(declared & written), frozenset(attributes)
+        return facts
+
+    @cached_property
     def imports(self):
         return tuple(n for n in self.syntax if isinstance(n, (ast.Import, ast.ImportFrom)))
 
