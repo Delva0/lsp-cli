@@ -29,7 +29,7 @@ def body(ws, entry):
     for node in entry.declarations:
         span = source.span(node)
         if entry.kind == "parameter":
-            span = ws.catalog.header(source, entry.scope.node)
+            span = ws.catalog_for(source).header(source, entry.scope.node)
         first = min([span["line"], *(d.lineno for d in getattr(node, "decorator_list", []))])
         rows.append(
             code_record(
@@ -51,9 +51,9 @@ def fragments(ws, occurrences, *, declarations=()):
     full = defaultdict(set)
     ends = {}
     by_source = {source.name: source for source in ws.sources}
-    catalog = ws.catalog
 
     def include_header(source, node, *, binding=None):
+        catalog = ws.catalog_for(source)
         header = catalog.header(source, node)
         if binding is not None and isinstance(node, (
             ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr, ast.Import, ast.ImportFrom,
@@ -79,6 +79,7 @@ def fragments(ws, occurrences, *, declarations=()):
             full[source.name].update(numbers)
 
     def ancestors(source, node):
+        catalog = ws.catalog_for(source)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             include_header(source, node)
         while id(node) in catalog.parents:
@@ -87,6 +88,7 @@ def fragments(ws, occurrences, *, declarations=()):
             node = parent
 
     def include_parent(source, node, parent):
+        catalog = ws.catalog_for(source)
         if isinstance(parent, ast.match_case):
             first = parent.pattern.lineno
             depth, last = 0, first

@@ -121,6 +121,33 @@ class Workspace:
             self._catalog_key = key
         return self._catalog
 
+    def catalog_for(self, source):
+        """Source positions and lexical parents never require dependency catalogs."""
+        return self.session.catalog([source])
+
+    def lookup(self, selector, *, exact=False):
+        """Select a binding without cataloging every discovered dependency."""
+        from .planning import lexical_candidate
+        from .selectors import Matcher
+
+        # Semantic edges already carry qualified names. Their declaring modules
+        # are known; do not run a suffix-pattern search over every dependency.
+        parts = selector.split(".")
+        prefixes = {".".join(parts[:size]) for size in range(1, len(parts) + 1)}
+        found = [entry for source in self.sources if source.module in prefixes
+                 for entry in self.catalog_for(source).select(selector) if entry.name == selector]
+        if found or exact:
+            return found
+        matcher = Matcher(self.args)
+        found = []
+        for source in self.sources:
+            if selector in (source.name, source.provenance.get("git_path")):
+                return self.catalog_for(source).select(selector)
+            if lexical_candidate(source, [(selector, "glob")], matcher):
+                found.extend(self.catalog_for(source).select(selector))
+        exact = [entry for entry in found if entry.name == selector]
+        return exact or found
+
     def load(self, path):
         if not self.loader:
             return self.loaded.get(path)
@@ -194,7 +221,7 @@ class Workspace:
         }
 
     def select(self, selector, *, follow_import=True):
-        matches = self.catalog.select(selector)
+        matches = self.lookup(selector)
         if len(matches) > 1:
             raise SelectionError(f"Ambiguous symbol: {selector}", "ambiguous", matches)
         if matches:
@@ -206,11 +233,12 @@ class Workspace:
             for node in source.syntax:
                 if not isinstance(node, ast.Attribute) or node.attr != selector.rsplit(".", 1)[-1]:
                     continue
-                scope = self.catalog.node_scopes.get(id(node))
+                catalog = self.catalog_for(source)
+                scope = catalog.node_scopes.get(id(node))
                 expression = ast.unparse(node)
                 possible = {expression, f"{scope.name}.{expression}" if scope else expression}
                 if selector in possible or any(name.endswith("." + selector) for name in possible):
-                    found = self.definition(source, self.catalog.selection(source, node, node.attr, last=True))
+                    found = self.definition(source, catalog.selection(source, node, node.attr, last=True))
                     if len(found) == 1:
                         return found[0]
         if "." in selector:
@@ -220,6 +248,10 @@ class Workspace:
                 found = self.inherited(parents[0], member)
                 if found:
                     return found
+        if selector in getattr(self, "binding_searches", ()):
+            parts = selector.split(".")
+            if not any(self.binding_prefix(".".join(parts[:size])) for size in range(len(parts), 0, -1)):
+                raise SelectionError(f"No declaration prefix can establish {selector!r}")
         # The flow engine establishes imports, aliases and receiver-sensitive
         # relationships unavailable from a source-only lookup.
         try:
@@ -234,13 +266,13 @@ class Workspace:
                 symbol, _receiver = selected[0]
                 for source in analysis.sources:
                     self.loaded.setdefault(source.provenance.get("git_path", source.name), source)
-                found = self.catalog.select(symbol.name)
+                found = self.lookup(symbol.name)
                 if len(found) == 1:
                     return found[0]
         except (ValueError, NeedsBindingsError) as error:
             if isinstance(error, SelectionError) and error.status == "ambiguous":
                 raise
-        alternatives = self.catalog.select(selector.rsplit(".", 1)[-1])
+        alternatives = self.lookup(selector.rsplit(".", 1)[-1])
         status = "not_found" if self.metadata()["complete"] else "unresolved"
         error = SelectionError(f"Symbol {selector!r} was not resolved in the selected input", status, alternatives)
         error.context = self.result(self.args.command)
@@ -280,9 +312,8 @@ class Workspace:
         """
         parts = selector.split(".")
         names = set().union(*(source.binding_names for source in sources))
-        catalog = self.catalog
         return any(
-            catalog.select(".".join(parts[:length])) and all(part in names for part in parts[length:])
+            all(part in names for part in parts[length:]) and self.lookup(".".join(parts[:length]))
             for length in range(len(parts), 0, -1)
         )
 
@@ -290,7 +321,7 @@ class Workspace:
         """Use the flow selector's exact-name and declaration-over-import precedence."""
         from .discovery import matching
 
-        return matching(self.catalog.select(selector), selector)
+        return matching(self.lookup(selector), selector)
 
     def analysis_sources(self, selectors=(), *, reverse=False):
         if self.loader:
@@ -424,9 +455,9 @@ class Workspace:
                 # ty denotes a module definition with an empty range at the
                 # file origin, rather than a declaration's identifier range.
                 if (span["line"], span["column"], span["end_line"], span["end_column"]) == (1, 0, 1, 0):
-                    entries = [entry for entry in self.catalog.by_source[id(target)] if entry.kind == "module"]
+                    entries = [entry for entry in self.catalog_for(target).entries if entry.kind == "module"]
                 else:
-                    entries = self.catalog.at(target, span)
+                    entries = self.catalog_for(target).at(target, span)
                 for entry in entries:
                     found[entry.identity] = entry
         return list(found.values())
@@ -441,7 +472,7 @@ class Workspace:
         except (NeedsBindingsError, ValueError):
             return None
         for cls in order[1:]:
-            found = self.catalog.select(cls.name + "." + member)
+            found = self.lookup(cls.name + "." + member)
             if len(found) == 1:
                 self.receivers[found[0].identity] = entry.name
                 return found[0]

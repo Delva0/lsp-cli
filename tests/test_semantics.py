@@ -53,7 +53,8 @@ def test_unvisited_local_class_after_context_limit_is_diagnosed_without_crashing
     assert not any(r.get("scope") == "example.outer.Local" for r in result["results"])
 
 
-def test_pyan_reuse_and_c3_super_correction():
+@pytest.mark.parametrize("backend", ["native", "pyan"])
+def test_pyan_reuse_and_c3_super_correction(backend):
     a = analyze(
         """\
         from pkg.base import A as Parent, helper as imported
@@ -70,6 +71,9 @@ def test_pyan_reuse_and_c3_super_correction():
     """,
         **{"pkg.base": "def helper(): pass\nclass A:\n    def ping(self): pass\n"},
     )
+    if backend == "pyan":
+        from pyrel.backend import PyanFacts
+        a = Analysis(a.sources, facts_factory=PyanFacts)
     events = calls(a, "D.run")
     assert [(e["callee"], e["target"]) for e in events] == [
         ("self.ping", "example.C.ping"),
@@ -79,13 +83,13 @@ def test_pyan_reuse_and_c3_super_correction():
         ("super(B, self).ping", "example.C.ping"),
         ("imported", "pkg.base.helper"),
     ]
-    assert events[0]["binding_engine"] == "pyan3+flow"
+    assert events[0]["binding_engine"] == ("pyan3+flow" if backend == "pyan" else "pyrel")
     assert events[2]["binding_engine"] == "pyrel"
     assert targets(a, "D.work")[-1] == ("super().ping", "example.C.ping")
     assert targets(a, "B.work")[-1] == ("super().ping", "pkg.base.A.ping")
     inheritance = query(a, "inherits", ["D"])["results"][0]
     assert inheritance["mro"] == ["example.D", "example.B", "example.C", "pkg.base.A", "builtins.object"]
-    assert inheritance["mro_engine"] == "pyan3"
+    assert inheritance["mro_engine"] == ("pyan3" if backend == "pyan" else "pyrel-c3")
 
 
 def test_alias_rebinding_local_function_and_shadowing():

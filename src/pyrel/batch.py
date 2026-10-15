@@ -10,7 +10,7 @@ from .evidence import fragments, head, render
 from .git_queries import compare, history, view
 from .listing import list_symbols
 from .model import source_lines
-from .planning import candidate_paths, inherited_inputs, lexical_candidate
+from .planning import binding_inputs, candidate_paths, inherited_inputs, lexical_candidate
 from .relations import paths
 from .selectors import Matcher, Selector, braces, expand, inputs, literal_address
 from .semantics import expression_references
@@ -71,11 +71,11 @@ def workspace(args, session, revision, specs):
             for path in preferred:
                 if path in paths:
                     ws.load(path)
+        ws.loader.read_many(paths)
         for path in sorted(paths):
             ws.load(path)
-        if args.command not in {"list", "refs"}:
-            ws.loaded = {path: source for path, source in ws.loaded.items()
-                         if lexical_candidate(source, patterns, matcher)}
+        ws.loaded = {path: source for path, source in ws.loaded.items()
+                     if lexical_candidate(source, patterns, matcher, args.command == "list")}
         return ws
     return Workspace(selected, session, selected.symbols[:1])
 
@@ -104,43 +104,10 @@ def matches(ws, pattern, matcher, *, kinds=(), follow_import=True, mode="glob"):
         entry = ws.follow_import(candidate) if follow_import and candidate.kind == "import" else candidate
         resolved.setdefault((entry.identity, ""), (entry, ""))
     if follow_import:
-        # Project possible member addresses cheaply, then prove only those that
-        # match the pattern. A projection alone is never a returned binding.
-        classes = {e.name: e for e in ws.catalog.entries if e.kind == "class"}
-        members = {e.name.rsplit(".", 1)[-1] for e in ws.catalog.entries if e.parent in classes}
-        declared = {e.name for e in ws.catalog.entries}
-        eligible = set()
-        if mode == "glob":
-            # Filter before the class/member product. A precise method request
-            # should not materialize every possible inherited name in a repo.
-            member_names = sorted(members)
-            class_names = list(classes)
-            for expression in braces(pattern):
-                parent, dot, member = expression.rpartition(".")
-                # ** can span components; bracket expressions may contain a dot.
-                # Keep these broader candidates for the final full-name matcher.
-                broad = "[" in expression or "**" in member
-                selected_members = (member_names if broad else
-                                    [member_names[i] for i in matcher.indices(member, member_names)])
-                selected_classes = ([class_names[i] for i in matcher.indices(parent, class_names)]
-                                    if dot and not broad and "**" not in parent else class_names)
-                eligible.update((name, member) for name in selected_classes for member in selected_members)
-        else:
-            eligible.update((name, member) for name in classes for member in members)
-        projected = [
-            (cls, member)
-            for cls, member in ((classes[name], member) for name, member in sorted(eligible))
-            if cls.node.bases
-            and (not ws.selection_files or cls.source.provenance.get("git_path") in ws.selection_files)
-            if cls.name + "." + member not in declared
-        ]
-        options = [name for cls, member in projected for name in (cls.name + "." + member, member)]
-        for index in sorted({i // 2 for i in matcher.indices(pattern, options, mode=mode)}):
-            cls, member = projected[index]
-            inherited = ws.inherited(cls, member)
-            if inherited and (not kinds or inherited.kind in kinds):
-                receiver = ws.receivers.pop(inherited.identity, cls.name)
-                resolved.setdefault((inherited.identity, receiver), (inherited, receiver))
+        from .planning import inherited_matches
+
+        for inherited, receiver in inherited_matches(ws, pattern, mode, matcher, kinds):
+            resolved.setdefault((inherited.identity, receiver), (inherited, receiver))
     # Explicit inherited/aliased addresses keep their receiver, rather than
     # pretending their implementation is a declaration in the subclass.
     for expression in braces(pattern) if mode == "glob" else [pattern]:
@@ -151,6 +118,7 @@ def matches(ws, pattern, matcher, *, kinds=(), follow_import=True, mode="glob"):
         ):
             continue
         try:
+            binding_inputs(ws, literal, matcher)
             entry = ws.select(literal)
             receiver = ws.receivers.pop(entry.identity, "")
             if not kinds or entry.kind in kinds:
@@ -255,7 +223,7 @@ def run_selector(ws, spec, matcher):
             result["heads"] = [entry.record() for entry, _ in entries + destinations]
             return [result]
     if not entries:
-        if args.command == "refs" and (literal := literal_address(spec.pattern, spec.mode)):
+        if args.command == "refs" and ws.sources and (literal := literal_address(spec.pattern, spec.mode)):
             occurrences = expression_references(ws, literal, args.roles or [])
             if occurrences:
                 result = ws.result("refs", fragments(ws, occurrences))

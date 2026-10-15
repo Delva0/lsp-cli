@@ -9,14 +9,14 @@ lsp diff 'v1..v2:Client.send'
 lsp refs 'v2:Client.send' --roles call
 ```
 
-Source is returned with its original file and line numbers. Versioned queries read Git objects without changing the checkout. No repository pre-indexing or database setup is required. This is a Python CLI built with ty, pyan3 and source analysis, rather than a general-purpose LSP protocol client.
+Source is returned with its original file and line numbers. Versioned queries read Git objects without changing the checkout. No repository pre-indexing or database setup is required. The CLI combines ty with Python source and binding analysis.
 
 ## Install / uninstall
 
 Linux/macOS, Git and network access are required. The installer uses an isolated [uv tool environment](https://docs.astral.sh/uv/guides/tools/), installs uv if needed, and lets uv obtain Python 3.13. It does not modify shell startup files or require sudo.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.11/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.12/scripts/install.sh | bash
 ```
 
 If `lsp` is not on your PATH, use the path printed by the installer (normally `~/.local/bin/lsp`), or add that directory to PATH. Installation downloads the pinned analysis dependencies; it is not a single static executable. No embedding model is downloaded by the public actions.
@@ -24,13 +24,13 @@ If `lsp` is not on your PATH, use the path printed by the installer (normally `~
 Uninstall the isolated tool, keeping uv, Python, your repositories and shared download caches:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.11/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.12/scripts/uninstall.sh | bash
 ```
 
 With uv already installed:
 
 ```bash
-uv tool install --python 3.13 'git+https://github.com/Delva0/lsp-cli.git@v0.18.11'
+uv tool install --python 3.13 'git+https://github.com/Delva0/lsp-cli.git@v0.18.12'
 uv tool uninstall lsp-cli
 ```
 
@@ -96,7 +96,7 @@ git show v2.31.0:requests/adapters.py | lsp refs conn.cert_reqs
 
 ## Analysis boundaries
 
-Direct source reads avoid starting semantic engines. Relationships use ty where available, supplemented by pyan3 and lexical/control-flow analysis. Unresolved dynamic dispatch and imports outside the analysis input stay unresolved; an empty or partial result is not proof that no runtime relationship exists. Inspect the JSON coverage/diagnostics for automated consumers. CPU/IO and query size still matter; this is static evidence, not runtime execution.
+Direct source reads avoid starting semantic engines. Relationships use ty where available, supplemented by local lexical/control-flow analysis and validated C3 MRO. The default query path avoids building a redundant pyan3 graph; pyan3 remains a semantic regression oracle. Unresolved dynamic dispatch and imports outside the analysis input stay unresolved; an empty or partial result is not proof that no runtime relationship exists. Inspect the JSON coverage/diagnostics for automated consumers. CPU/IO and query size still matter; this is static evidence, not runtime execution.
 
 A short-lived local worker reuses parsed source and ty sessions between invocations and exits after 300 idle seconds by default (`LSP_IDLE_SECONDS` configures this). It is started automatically, uses a local Unix socket, and needs no service deployment. Temporary snapshots do not modify your checkout. See `src/pyrel/service.py` for the runtime contract.
 
@@ -117,11 +117,11 @@ LSP_CLI_SOURCE="$PWD" bash scripts/install.sh
 `uv sync` installs the project editable for development. In a prepared Python 3.13 container, install the tagged source with pip and run from the mounted repository:
 
 ```bash
-python -m pip install 'git+https://github.com/Delva0/lsp-cli.git@v0.18.11'
+python -m pip install 'git+https://github.com/Delva0/lsp-cli.git@v0.18.12'
 cd /workspace/your-repository
 lsp list HEAD: --kinds class function
 ```
 
 Git must be installed in that container. Source queries do not require installing the target application's dependencies; missing external types may limit relationship resolution.
 
-The initial standalone release preserves the Graphub 0.18.11 analysis implementation. `upstream-source.json` records original source hashes; tests are carried over with package import paths adapted. Licensed under MIT; dependency licenses remain their own.
+This release carries the 0.18.12 analysis implementation. `upstream-source.json` records original source hashes; tests are carried over with package import paths adapted. Licensed under MIT; dependency licenses remain their own.

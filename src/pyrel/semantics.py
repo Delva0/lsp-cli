@@ -58,7 +58,7 @@ def dead(catalog, node):
 
 
 def occurrence(ws, source, node, kind, **extra):
-    catalog = ws.catalog
+    catalog = ws.catalog_for(source)
     scope = catalog.node_scopes.get(id(node), catalog.roots[source.name])
     record = {
         "kind": kind,
@@ -78,7 +78,7 @@ def occurrence(ws, source, node, kind, **extra):
 def target(ws, item):
     located = ws.location(item["uri"], item.get("selectionRange", item["range"]))
     if located:
-        entries = ws.catalog.at(*located)
+        entries = ws.catalog_for(located[0]).at(*located)
         return entries[0].name if len(entries) == 1 else None
     # This proof is a server-returned typeshed declaration, never a name guess.
     if item.get("detail") == "builtins" and item["uri"].endswith("/stdlib/builtins.pyi"):
@@ -111,7 +111,7 @@ def receiver_order(ws, source, node, rows):
     from .effects import preserves_receiver
     from .relations import type_order
 
-    catalog = ws.catalog
+    catalog = ws.catalog_for(source)
     scope = catalog.node_scopes[id(node)]
     if scope.kind != "function" or isinstance(scope.node, ast.Lambda):
         return None
@@ -147,7 +147,7 @@ def receiver_order(ws, source, node, rows):
         if any(ast.unparse(decorator) != "classmethod" for decorator in scope.node.decorator_list):
             return None
         if parameters and receiver.id == parameters[0].arg:
-            classes = catalog.select(scope.parent.name)
+            classes = ws.lookup(scope.parent.name, exact=True)
     elif binding.kind == "variable" and len(binding.declarations) == 1:
         assignment = binding.node
         targets = assignment.targets if isinstance(assignment, ast.Assign) else [getattr(assignment, "target", None)]
@@ -164,7 +164,7 @@ def receiver_order(ws, source, node, rows):
             site = site_key(source.span(assignment.value))
             targets = [r["target"] for r in rows if site_key(r) == site and r["resolution"] == "resolved"]
             if len(targets) == 1:
-                classes = catalog.select(targets[0])
+                classes = ws.lookup(targets[0], exact=True)
     if len(classes) != 1 or classes[0].kind != "class" or classes[0].decorators:
         return None
     if any(src.guards["dynamic_writes"] for src in ws.sources):
@@ -185,7 +185,7 @@ def receiver_order(ws, source, node, rows):
         order, _edges = type_order(ws, classes[0])
     except (ValueError, NeedsBindingsError):
         return None
-    if any(catalog.select(cls.name + "." + hook)
+    if any(ws.lookup(cls.name + "." + hook, exact=True)
            for cls in order for hook in ("__new__", "__setattr__", "__delattr__")):
         return None
     if any(getattr(cls, "decorators", ()) for cls in order):
@@ -198,7 +198,7 @@ def receiver_order(ws, source, node, rows):
         return None
     if binding.kind == "variable":
         for cls in order:
-            initializers = catalog.select(cls.name + ".__init__")
+            initializers = ws.lookup(cls.name + ".__init__", exact=True)
             if initializers:
                 init = initializers[0]
                 args = [*init.node.args.posonlyargs, *init.node.args.args]
@@ -216,7 +216,7 @@ def flow_sensitive(ws, source, node, entry, rows):
     Reject its answer at explicit dynamic constructs before flow validation.
     Straight calls to declarations stay entirely on the native path.
     """
-    catalog = ws.catalog
+    catalog = ws.catalog_for(source)
     scope = catalog.node_scopes[id(node)]
     if ws.receivers.get(entry.identity):
         return "an inherited body requires the selected receiver's MRO"
@@ -240,7 +240,7 @@ def flow_sensitive(ws, source, node, entry, rows):
         if dynamic or metaclass:
             order = receiver_order(ws, source, node, rows)
             if order is not None:
-                dynamic = any(catalog.select(cls.name + "." + method)
+                dynamic = any(ws.lookup(cls.name + "." + method, exact=True)
                               for cls in order for method in ("__getattr__", "__getattribute__"))
                 # type_order rejects a custom metaclass anywhere in the MRO.
                 metaclass = False
@@ -262,8 +262,8 @@ def flow_sensitive(ws, source, node, entry, rows):
     return None
 
 
-def calls(ws, entry, *, fallback=True, fallback_sites=None):
-    source, catalog = entry.source, ws.catalog
+def calls(ws, entry, *, fallback=True, fallback_sites=None, flow_selectors=()):
+    source, catalog = entry.source, ws.catalog_for(entry.source)
     nodes = [node for node in ast.walk(entry.node) if isinstance(node, ast.Call)]
     known, owners = {}, {}
     for node in nodes:
@@ -312,7 +312,7 @@ def calls(ws, entry, *, fallback=True, fallback_sites=None):
             roles=["read", "call"],
         )
         if name:
-            definitions = ws.catalog.select(name)
+            definitions = ws.lookup(name, exact=True)
             if definitions and set(definitions[0].decorators) - {"staticmethod", "classmethod"}:
                 row.update(target=None, resolution="unresolved", reason="a decorator may replace this callable")
         rows.append(row)
@@ -329,7 +329,7 @@ def calls(ws, entry, *, fallback=True, fallback_sites=None):
         for row in rows
     ):
         try:
-            analysis = ws.analysis([entry.name])
+            analysis = ws.analysis(flow_selectors or [entry.name])
             recovered = {}
             for scope in owners.values():
                 if scope.name in analysis.symbols:
@@ -343,18 +343,18 @@ def calls(ws, entry, *, fallback=True, fallback_sites=None):
                         target=event["target"],
                         resolution="resolved",
                         reason=None,
-                        engine="pyan3+flow",
+                        engine="python-flow",
                         **({"receiver": event["receiver"]} if event.get("receiver") else {}),
                     )
                 elif row["resolution"] == "unresolved" and event:
-                    row.update(reason=event.get("reason") or row["reason"], engine="pyan3+flow")
+                    row.update(reason=event.get("reason") or row["reason"], engine="python-flow")
         except (ValueError, KeyError, RecursionError) as error:
             ws.diagnostics.append({"kind": "unresolved", "message": str(error)})
     return rows
 
 
 def events(ws, entry, filters):
-    source, catalog = entry.source, ws.catalog
+    source, catalog = entry.source, ws.catalog_for(entry.source)
     rows = calls(ws, entry) if {"call", "read"}.intersection(filters) else []
     for node in ast.walk(entry.node):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and "read" in filters:
@@ -456,8 +456,8 @@ def expression_references(ws, selector, filters):
         row = {
             **ref,
             "roles": roles,
-            "engine": "pyan3+flow",
-            "statement": ws.catalog.header(source, statement(ws.catalog, node)),
+            "engine": "python-flow",
+            "statement": ws.catalog_for(source).header(source, statement(ws.catalog_for(source), node)),
         }
         if not row.get("target"):
             row.update(
@@ -499,7 +499,7 @@ def references(ws, entry, filters):
                 )
                 continue
             source, span = located
-            catalog = ws.catalog
+            catalog = ws.catalog_for(source)
             point = (span["line"], span["column"])
             declarations = catalog.at(source, span)
             if any(e.kind in {"module", "class", "function", "method", "parameter"} for e in declarations):
@@ -541,7 +541,7 @@ def references(ws, entry, filters):
                 roles = [reference["role"]]
                 if "read" in roles and call_node(sources[reference["source"]], reference):
                     roles.append("call")
-                row = {**reference, "roles": roles, "engine": "pyan3+flow"}
+                row = {**reference, "roles": roles, "engine": "python-flow"}
                 if selected(row, filters):
                     rows.append(row)
     # Incoming call hierarchy includes proven calls through callable aliases
@@ -577,19 +577,26 @@ def references(ws, entry, filters):
             continue
         source = next(s for s in ws.sources if s.name == row["source"])
         node = call_node(source, row)
-        scope = ws.catalog.node_scopes[id(node)] if node else None
-        owners = [e for e in ws.catalog.entries if scope and e.node is scope.node and e.source is source]
+        catalog = ws.catalog_for(source)
+        scope = catalog.node_scopes[id(node)] if node else None
+        owners = [e for e in catalog.entries if scope and e.node is scope.node and e.source is source]
         if len(owners) != 1:
             row.update(resolution="unresolved", target=None, reason="The caller scope has no unique binding")
             continue
         owner = owners[0]
         pending.setdefault(owner.identity, (owner, []))[1].append((row, site_key(source.span(node))))
+    # Every candidate caller belongs to this one refs query. Validate their
+    # bindings against one explicit input set, rather than rebuilding almost
+    # identical dependency closures for each caller. Other queries stay isolated.
+    flow_selectors = tuple(owner.name for owner, _uses in pending.values())
     for owner, uses in pending.values():
         # Keep the whole caller's native/flow guards, including preceding calls
         # that could mutate a receiver. Only requested reference sites can justify
         # an expensive flow fallback; unrelated unresolved calls are not evidence
         # that these references need it.
-        events = {site_key(row): row for row in calls(ws, owner, fallback_sites={key for _, key in uses})}
+        events = {site_key(row): row for row in calls(
+            ws, owner, fallback_sites={key for _, key in uses}, flow_selectors=flow_selectors,
+        )}
         for row, key in uses:
             if event := events.get(key):
                 row.update(
@@ -612,7 +619,7 @@ def references(ws, entry, filters):
             if role is None or (filters and role not in filters):
                 continue
             source = next(s for s in ws.sources if s.name == relation["source"])
-            declarations = ws.catalog.select(relation["symbol"])
+            declarations = ws.lookup(relation["symbol"], exact=True)
             if len(declarations) != 1:
                 continue
             declaration = declarations[0]
@@ -623,7 +630,7 @@ def references(ws, entry, filters):
                 for base in declaration.node.bases:
                     node = base.value if isinstance(base, ast.Subscript) else base
                     selected_span = (
-                        ws.catalog.selection(source, node, node.attr, last=True)
+                        ws.catalog_for(source).selection(source, node, node.attr, last=True)
                         if isinstance(node, ast.Attribute)
                         else source.span(node)
                     )
@@ -642,7 +649,7 @@ def references(ws, entry, filters):
                     "target": entry.name,
                     "binding": entry.name,
                     "resolution": relation.get("resolution", "resolved"),
-                    "statement": ws.catalog.header(source, declaration.node),
+                    "statement": ws.catalog_for(source).header(source, declaration.node),
                     "engine": relation.get("engine", "ty-lsp"),
                 },
             )

@@ -45,7 +45,7 @@ def _type_order(ws, entry, active):
     for expression in entry.node.bases:
         node = expression.value if isinstance(expression, ast.Subscript) else expression
         span = (
-            ws.catalog.selection(entry.source, node, node.attr, last=True)
+            ws.catalog_for(entry.source).selection(entry.source, node, node.attr, last=True)
             if isinstance(node, ast.Attribute)
             else entry.source.span(node)
         )
@@ -102,14 +102,14 @@ def _type_order(ws, entry, active):
     return result, edges
 
 
-def imported_member(ws, scope, expression, modules, members):
+def imported_member(ws, source, scope, expression, modules, members):
     node = expression.value if isinstance(expression, ast.Subscript) else expression
     name = (
         node.id
         if isinstance(node, ast.Name)
         else (node.value.id if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) else None)
     )
-    binding = ws.catalog.lookup(scope, name) if name else None
+    binding = ws.catalog_for(source).lookup(scope, name) if name else None
     if not binding or binding.kind != "import" or len(binding.declarations) != 1:
         return False
     imported = binding.node
@@ -125,6 +125,7 @@ def abstract_member(ws, entry):
     return any(
         imported_member(
             ws,
+            entry.source,
             entry.scope,
             node,
             {"abc"},
@@ -135,12 +136,14 @@ def abstract_member(ws, entry):
 
 
 def protocol_member(ws, entry):
-    parents = ws.catalog.select(entry.parent) if entry.parent else []
+    parents = ws.lookup(entry.parent, exact=True) if entry.parent else []
     return bool(
         len(parents) == 1
         and parents[0].kind == "class"
         and any(
-            imported_member(ws, parents[0].scope, node, {"typing", "typing_extensions"}, {"Protocol"})
+            imported_member(
+                ws, parents[0].source, parents[0].scope, node, {"typing", "typing_extensions"}, {"Protocol"},
+            )
             for node in parents[0].node.bases
         ),
     )
@@ -154,7 +157,7 @@ def method_edge(ws, child, base, *, engine="ty-lsp"):
         "relation": "overrides",
         "resolution": "resolved",
         "engine": engine,
-        "statement": ws.catalog.header(child.source, child.node),
+        "statement": ws.catalog_for(child.source).header(child.source, child.node),
     }
     rows = [row]
     if (abstract_member(ws, base) or protocol_member(ws, base)) and not abstract_member(ws, child):
@@ -176,7 +179,7 @@ def known_ancestors(ws, origin, max_depth):
         for expression in current.node.bases:
             node = expression.value if isinstance(expression, ast.Subscript) else expression
             span = (
-                ws.catalog.selection(current.source, node, node.attr, last=True)
+                ws.catalog_for(current.source).selection(current.source, node, node.attr, last=True)
                 if isinstance(node, ast.Attribute)
                 else current.source.span(node)
             )
@@ -200,10 +203,10 @@ def inheritance(ws, entry, max_depth):
     rows, mro, reason = [], None, None
     origin = entry
     if entry.identity in ws.receivers:
-        parents = ws.catalog.select(ws.receivers[entry.identity])
+        parents = ws.lookup(ws.receivers[entry.identity], exact=True)
         origin = parents[0] if len(parents) == 1 else entry
     elif entry.kind == "method":
-        parents = ws.catalog.select(entry.parent)
+        parents = ws.lookup(entry.parent, exact=True)
         origin = parents[0] if len(parents) == 1 else entry
     if origin.kind != "class":
         raise ValueError("inheritance requires a class or method")
@@ -214,11 +217,13 @@ def inheritance(ws, entry, max_depth):
     except (ValueError, NeedsBindingsError) as error:
         reason = str(error)
         try:
-            analysis = ws.analysis([origin.name], reverse=True)
+            # Computing this class's MRO needs its bases, not every importer.
+            # Descendants are queried independently through type hierarchy below.
+            analysis = ws.analysis([origin.name])
             inherited = flow_query(analysis, "inherits", [origin.name])["results"][0]
             if inherited["mro"] and "metaclass" not in reason:
                 mro, reason = inherited["mro"], None
-                ws.diagnostics.append({"kind": "lsp_fallback", "message": str(error) + "; MRO from pyan3+flow"})
+                ws.diagnostics.append({"kind": "lsp_fallback", "message": str(error) + "; MRO from python-flow"})
         except (ValueError, KeyError, RecursionError):
             pass
     descendants = {origin.name: 0}
@@ -241,8 +246,8 @@ def inheritance(ws, entry, max_depth):
             for child in children:
                 located = ws.location(child["uri"], child["selectionRange"])
                 parent = ws.location(item["uri"], item["selectionRange"])
-                candidates = ws.catalog.at(*located) if located else []
-                bases = ws.catalog.at(*parent) if parent else []
+                candidates = ws.catalog_for(located[0]).at(*located) if located else []
+                bases = ws.catalog_for(parent[0]).at(*parent) if parent else []
                 if candidates and bases:
                     child_entry = candidates[0]
                     descendants[child_entry.name] = min(depth + 1, descendants.get(child_entry.name, depth + 1))
@@ -253,7 +258,9 @@ def inheritance(ws, entry, max_depth):
                             "target": bases[0].name,
                             "relation": "inherits",
                             "resolution": "resolved",
-                            "statement": ws.catalog.header(child_entry.source, child_entry.node),
+                            "statement": ws.catalog_for(child_entry.source).header(
+                                child_entry.source, child_entry.node,
+                            ),
                         },
                     )
                 pending.append((child, depth + 1))
@@ -265,7 +272,8 @@ def inheritance(ws, entry, max_depth):
         leaf = entry.name.rsplit(".", 1)[-1]
         members.extend(
             e
-            for e in ws.catalog.entries
+            for source in {e.source.name: e.source for name in relevant for e in ws.lookup(name, exact=True)}.values()
+            for e in ws.catalog_for(source).entries
             if e.kind == "method"
             and e.parent in relevant
             and (entry.kind == "class" or e.name.rsplit(".", 1)[-1] == leaf)
@@ -279,7 +287,7 @@ def inheritance(ws, entry, max_depth):
                     implementation.get("uri", implementation.get("targetUri")),
                     implementation.get("range", implementation.get("targetSelectionRange")),
                 )
-                for candidate in ws.catalog.at(*located) if located else []:
+                for candidate in ws.catalog_for(located[0]).at(*located) if located else []:
                     if candidate.name == member.name or candidate.kind != member.kind:
                         continue
                     owner = candidate.name if candidate.kind == "class" else candidate.parent
@@ -292,7 +300,7 @@ def inheritance(ws, entry, max_depth):
                             {
                                 **candidate.identifier,
                                 "symbol": candidate.name,
-                                "statement": ws.catalog.header(candidate.source, candidate.node),
+                                "statement": ws.catalog_for(candidate.source).header(candidate.source, candidate.node),
                                 "target": member.name,
                                 "relation": "implements",
                                 "resolution": "resolved",
@@ -334,7 +342,7 @@ def inheritance(ws, entry, max_depth):
             if name not in descendants or not info["mro"]:
                 continue
             if entry.kind == "class":
-                classes = ws.catalog.select(name)
+                classes = ws.lookup(name, exact=True)
                 if len(classes) == 1:
                     cls = classes[0]
                     rows.extend(
@@ -344,24 +352,25 @@ def inheritance(ws, entry, max_depth):
                             "target": base,
                             "relation": "implements",
                             "resolution": "resolved",
-                            "engine": "pyan3+flow",
-                            "statement": ws.catalog.header(cls.source, cls.node),
+                            "engine": "python-flow",
+                            "statement": ws.catalog_for(cls.source).header(cls.source, cls.node),
                         }
                         for base in info["mro"][1:]
                         if base in infos
                     )
             members = [
                 e
-                for e in ws.catalog.entries
+                for cls in ws.lookup(name, exact=True)
+                for e in ws.catalog_for(cls.source).entries
                 if e.parent == name
                 and e.kind == "method"
                 and (entry.kind == "class" or e.name.rsplit(".", 1)[-1] == entry.name.rsplit(".", 1)[-1])
             ]
             for member in members:
                 for base in info["mro"][1:]:
-                    targets = ws.catalog.select(base + "." + member.name.rsplit(".", 1)[-1])
+                    targets = ws.lookup(base + "." + member.name.rsplit(".", 1)[-1], exact=True)
                     if len(targets) == 1:
-                        rows.extend(method_edge(ws, member, targets[0], engine="pyan3+flow"))
+                        rows.extend(method_edge(ws, member, targets[0], engine="python-flow"))
     unique = {(r["source"], r["symbol"], r["target"], r["relation"]): r for r in rows}
     ordered = sorted(unique.values(), key=lambda r: (r["source"], r["line"], r["column"], r["relation"], r["target"]))
     known = {origin.name}
@@ -401,6 +410,28 @@ def paths(ws, start, destinations, max_depth):
     edge_cache = getattr(ws, "path_edges", None)
     if edge_cache is None:
         ws.path_edges = edge_cache = {}
+    flow_results = {}
+
+    def flow_search():
+        if flow_results:
+            return
+        from .queries import paths as flow_paths
+
+        analysis = ws.analysis([start.name, *(entry.name for entry in remaining.values())])
+        source, inherited = analysis.select(receiver + "." + start.name.rsplit(".", 1)[-1] if receiver else start.name)
+        unresolved = list(remaining.items())
+        targets = [analysis.select(context + "." + entry.name.rsplit(".", 1)[-1] if context else entry.name)
+                   for (_identity, context), entry in unresolved]
+        fallback = flow_paths(analysis, source, targets, inherited, max_depth, {"diagnostics": []})
+        for source in analysis.sources:
+            ws.loaded.setdefault(source.provenance.get("git_path", source.name), source)
+        for (key, entry), row in zip(unresolved, fallback, strict=True):
+            result = ws.result("path", row["results"])
+            result.update(status=row["status"], destination=entry.record(), destination_receiver=key[1] or None,
+                          visited=row["visited"], unresolved_frontier=row.get("unresolved_frontier", frontier))
+            result["diagnostics"].extend(row.get("diagnostics", []))
+            result["backend"]["fallback"] = "python-flow"
+            flow_results[key] = result
 
     def reached(entry, actual_receiver, steps):
         for key in list(remaining):
@@ -430,43 +461,49 @@ def paths(ws, start, destinations, max_depth):
             else:
                 ws.receivers.pop(current.identity, None)
             edge_cache[key] = calls(ws, current, fallback=False)
+        direct_candidate = False
+        next_steps = []
         for event in edge_cache[key]:
             if event.get("unreachable") or event["scope"] != current.name:
                 continue
             if event["resolution"] != "resolved":
                 frontier.append(event)
+                direct_candidate |= not steps and any(
+                    event.get("callee", "").rsplit(".", 1)[-1] == dest.name.rsplit(".", 1)[-1]
+                    for dest in remaining.values()
+                )
                 continue
-            candidates = ws.catalog.select(event["target"])
+            candidates = ws.lookup(event["target"], exact=True)
             if len(candidates) != 1:
                 continue
             target = candidates[0]
             edge = {**event, "caller": current.name}
             target_receiver = event.get("receiver", "")
             reached(target, target_receiver, [*steps, edge])
-            if target.kind == "class":
-                try:
-                    target = ws.select(target.name + ".__init__")
-                except ValueError:
-                    continue
-            pending.append((target, target_receiver, [*steps, edge]))
+            next_steps.append((target, target_receiver, [*steps, edge]))
+        if remaining and direct_candidate:
+            # A spelling match is only a scheduling hint, never an edge. Prove
+            # the candidate now with full binding/argument flow before expanding
+            # unrelated native branches; if it fails, native traversal continues.
+            flow_search()
+            for key in list(remaining):
+                if flow_results[key]["status"] == "found":
+                    found[key] = flow_results[key]
+                    remaining.pop(key)
+        if remaining:
+            for target, target_receiver, continuation in next_steps:
+                callee = target
+                if target.kind == "class":
+                    try:
+                        callee = ws.select(target.name + ".__init__")
+                    except ValueError:
+                        continue
+                pending.append((callee, target_receiver, continuation))
     if remaining:
         # Argument, closure and receiver continuations require flow analysis.
-        from .queries import paths as flow_paths
-
-        analysis = ws.analysis([start.name, *(entry.name for entry in remaining.values())])
-        source, inherited = analysis.select(receiver + "." + start.name.rsplit(".", 1)[-1] if receiver else start.name)
-        unresolved = list(remaining.items())
-        targets = [analysis.select(context + "." + entry.name.rsplit(".", 1)[-1] if context else entry.name)
-                   for (_identity, context), entry in unresolved]
-        fallback = flow_paths(analysis, source, targets, inherited, max_depth, {"diagnostics": []})
-        for source in analysis.sources:
-            ws.loaded.setdefault(source.provenance.get("git_path", source.name), source)
-        for (key, entry), row in zip(unresolved, fallback, strict=True):
-            result = ws.result("path", row["results"])
-            result.update(status=row["status"], destination=entry.record(), destination_receiver=key[1] or None,
-                          visited=row["visited"], unresolved_frontier=row.get("unresolved_frontier", frontier))
-            result["diagnostics"].extend(row.get("diagnostics", []))
-            result["backend"]["fallback"] = "pyan3+flow"
+        flow_search()
+        for key in remaining:
+            result = flow_results[key]
             if (not result["coverage"]["complete"] or limited) and result["status"] != "found":
                 result["status"] = "incomplete"
             found[key] = result

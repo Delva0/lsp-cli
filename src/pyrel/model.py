@@ -63,9 +63,12 @@ class Source:
         self.lines = source_lines(self.text, keepends=True)
         self._encoded_lines = [line.encode("utf-8") for line in self.lines]
         self._segments = {}
+        self._spans = {}
         self._sha256 = hashlib.sha256(self.text.encode("utf-8")).hexdigest()
 
     def span(self, node):
+        if node in self._spans:
+            return dict(self._spans[node])
         if isinstance(node, ast.Module):
             end_line = max(1, len(self.lines))
             end_column = len(self.lines[-1].rstrip("\r\n")) if self.lines else 0
@@ -75,13 +78,15 @@ class Source:
         def column(number, byte_offset):
             return len(self._encoded_lines[number - 1][:byte_offset].decode("utf-8"))
 
-        return {
+        result = {
             "source": self.name,
             "line": line,
             "column": column(line, node.col_offset),
             "end_line": end_line,
             "end_column": column(end_line, node.end_col_offset or 0),
         }
+        self._spans[node] = result
+        return dict(result)
 
     def segment(self, node):
         if node not in self._segments:
@@ -102,6 +107,23 @@ class Source:
     @cached_property
     def syntax(self):
         return tuple(ast.walk(self.tree))
+
+    @cached_property
+    def lexical_nodes(self):
+        """Definition children and owned AST nodes, shared by query analyses."""
+        definitions, owned = {}, {}
+        scopes = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+        pending = [(child, self.tree) for child in reversed(list(ast.iter_child_nodes(self.tree)))]
+        while pending:
+            node, owner = pending.pop()
+            if isinstance(node, scopes):
+                definitions.setdefault(owner, []).append(node)
+                owner = node
+            else:
+                owned.setdefault(owner, []).append(node)
+            pending.extend((child, owner) for child in reversed(list(ast.iter_child_nodes(node))))
+        return ({node: tuple(children) for node, children in definitions.items()},
+                {node: tuple(children) for node, children in owned.items()})
 
     @cached_property
     def imports(self):
@@ -139,7 +161,7 @@ class Source:
     @cached_property
     def declared_names(self):
         """Names that can begin a lexical address in this file (including locals)."""
-        names = set(self.module.split("."))
+        names = set()
         for node in self.syntax:
             if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
                 names.add(node.id)

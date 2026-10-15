@@ -11,9 +11,11 @@ import ast
 import configparser
 import io
 import os
+import re
 import subprocess
 import tokenize
 import tomllib
+import unicodedata
 from collections import defaultdict, deque
 from copy import copy
 from difflib import get_close_matches
@@ -78,6 +80,8 @@ class GitSources:
             module = module_name(PurePosixPath(path if root == "." else path[len(root) + 1 :]))
             self.paths[path] = module
             self.modules[module].append(path)
+        self.module_prefixes = {".".join(module.split(".")[:size])
+                                for module in self.modules for size in range(1, len(module.split(".")) + 1)}
 
     def fork(self):
         """Share immutable revision data while keeping each query's discovery budget."""
@@ -108,12 +112,13 @@ class GitSources:
                 + hint + "Retry the same symbol query with an exact revision. " + str(error),
             ) from error
 
-    def git(self, *arguments, allow_no_match=False, env=None):
+    def git(self, *arguments, allow_no_match=False, env=None, input_data=None):
         result = subprocess.run(
             ["git", "--no-pager", "-C", self.repository, *arguments],
             capture_output=True,
             check=False,
             env=env,
+            input=input_data,
         )
         if result.returncode and not (allow_no_match and result.returncode == 1):
             raise ValueError("git: " + result.stderr.decode(errors="replace").strip())
@@ -125,6 +130,29 @@ class GitSources:
                 self._blob_cache[path] = self.git("cat-file", "blob", self.entries[path])
             self.raw[path] = self._blob_cache[path]
         return self.raw[path]
+
+    def read_many(self, paths):
+        """Read immutable blobs in one Git process, without parsing unrelated files."""
+        paths = tuple(paths)
+        missing = sorted({path for path in paths if path not in self._blob_cache})
+        if missing:
+            by_oid = defaultdict(list)
+            for path in missing:
+                by_oid[self.entries[path]].append(path)
+            data = self.git("cat-file", "--batch", input_data="".join(oid + "\n" for oid in by_oid).encode())
+            offset = 0
+            for oid, names in by_oid.items():
+                end = data.index(b"\n", offset)
+                actual, kind, size = data[offset:end].split()
+                if actual.decode() != oid or kind != b"blob":
+                    raise ValueError(f"Git did not return blob {oid}")
+                offset = end + 1
+                content = data[offset:offset + int(size)]
+                offset += int(size) + 1
+                for path in names:
+                    self._blob_cache[path] = content
+        for path in paths:
+            self.raw[path] = self._blob_cache[path]
 
     def default_roots(self):
         roots = {"."}
@@ -224,7 +252,7 @@ class GitSources:
                 paths.update(self.with_packages(module))
             bases = modules if isinstance(node, ast.Import) else modules[:1]
             for base in bases:
-                if base and base not in self.modules and not any(m.startswith(base + ".") for m in self.modules):
+                if base and base not in self.module_prefixes:
                     self.external.add(base)
         return paths
 
@@ -300,21 +328,40 @@ class GitSources:
                              "--file PATH, or --import-root PATH")
         return selected
 
-    def identifier_files(self, name):
+    def identifier_files(self, name, *, scope=False):
         """Prefilter ASCII names without dropping normalized Unicode identifiers."""
-        key = (name, "identifier")
+        key = (name, "scope" if scope else "identifier")
         self.searches += 1
         if key not in self._search_cache:
+            expression = (rf"(def|class)[[:space:]]+{name}([^[:alnum:]_]|$)|\\$" if scope else name)
             matches = self.git(
-                "grep", "-l", "-z", "-E", "-e", name + "|[^ -~[:space:]]",
+                "grep", "-l", "-z", "-E", "-e", expression + "|[^ -~[:space:]]",
                 self.commit, "--", "*.py", allow_no_match=True,
                 env={**os.environ, "LC_ALL": "C"},
             )
             prefix = self.commit + ":"
-            self._search_cache[key] = sorted({
+            candidates = sorted({
                 row.decode("utf-8", errors="surrogateescape").removeprefix(prefix)
                 for row in matches.split(b"\0") if row
             } & self.paths.keys())
+            self.read_many(candidates)
+            # Non-ASCII comments must not send hundreds of unrelated modules
+            # through AST/catalog construction. Normalize exactly as Python does
+            # for identifiers; false positives in strings/comments are harmless.
+            pattern = re.compile((r"\b(?:def|class)\s+" if scope else r"(?<!\w)")
+                                 + re.escape(name) + r"(?!\w)")
+            selected = []
+            for path in candidates:
+                try:
+                    text = unicodedata.normalize("NFKC", decode(self.raw[path]))
+                except (SyntaxError, UnicodeError):
+                    selected.append(path)  # The normal loader reports this error.
+                    continue
+                if scope:
+                    text = text.replace("\\\r\n", "").replace("\\\n", "")
+                if pattern.search(text):
+                    selected.append(path)
+            self._search_cache[key] = selected
         return self._search_cache[key]
 
     def query_candidates(self, selector):
@@ -374,7 +421,9 @@ class GitSources:
         if reverse:
             # Imports are inspected per invocation. Only relevant importers enter
             # the expensive binding engine; no repository index is retained.
-            for path in [*sorted(seeds), *sorted(self.paths.keys() - seeds)]:
+            candidates = [*sorted(seeds), *sorted(self.paths.keys() - seeds)]
+            self.read_many(candidates[:self.max_files])
+            for path in candidates:
                 source = self.source(path)
                 if source:
                     for dependency in self.dependencies(source):
@@ -383,6 +432,11 @@ class GitSources:
             path = pending.popleft()
             if path in self.loaded:
                 continue
+            if path not in self._blob_cache:
+                # Preserve discovery/budget order; batch the known frontier's
+                # blobs without parsing or adding any unrelated input.
+                available = self.max_files - len(self.parsed) - len(self.failed)
+                self.read_many(list(dict.fromkeys([path, *pending]))[:max(0, available)])
             source = self.source(path)
             if source is None:
                 continue

@@ -164,6 +164,15 @@ class Session:
     def catalog(self, sources):
         # Reuse only the identical input set, with its original revision labels.
         # Catalogs own source references, so object identities cannot be recycled.
+        if len(sources) == 1:
+            source = sources[0]
+            identity = id(source)
+            if identity not in self.source_catalogs:
+                self.source_catalogs[identity] = Catalog([source])
+            self.source_catalogs.move_to_end(identity)
+            while len(self.source_catalogs) > 256:
+                self.source_catalogs.popitem(last=False)
+            return self.source_catalogs[identity]
         key = tuple(id(source) for source in sources)
         if key not in self.catalogs:
             parts = []

@@ -20,6 +20,20 @@ class Summary:
     state: State = field(default_factory=State)
     calls: dict[int, tuple] = field(default_factory=dict)
 
+    def __deepcopy__(self, memo):
+        # Evidence contains only JSON-like containers and immutable Values.
+        # Generic deepcopy repeats its type/protocol dispatch for every scalar
+        # in thousands of source spans. Clone containers while retaining the
+        # same aliasing and isolation guarantees for every mutable field.
+        result = Summary()
+        memo[id(self)] = result
+        result.events = copy_evidence(self.events, memo)
+        result.refs = copy_evidence(self.refs, memo)
+        result.returns = list(self.returns)
+        result.state = deepcopy(self.state, memo)
+        result.calls = copy_evidence(self.calls, memo)
+        return result
+
     def result(self):
         values = list(self.returns)
         if not self.state.control:
@@ -27,19 +41,41 @@ class Summary:
         return merge(values, "return paths do not establish one binding/type")
 
 
+def copy_evidence(value, memo):
+    if type(value) not in (dict, list, tuple):
+        return value
+    if id(value) in memo:
+        return memo[id(value)]
+    if isinstance(value, dict):
+        result = {}
+        memo[id(value)] = result
+        result.update((key, copy_evidence(item, memo)) for key, item in value.items())
+    elif isinstance(value, list):
+        result = []
+        memo[id(value)] = result
+        result.extend(copy_evidence(item, memo) for item in value)
+    else:
+        result = tuple(copy_evidence(item, memo) for item in value)
+        memo[id(value)] = result
+    return result
+
+
 class Analysis:
     """Analyze only explicitly supplied source units; never import their code."""
 
-    def __init__(self, sources: list[Source]):
-        from .backend import PyanFacts
+    def __init__(self, sources: list[Source], *, facts_factory=None):
+        from .lexical import LexicalFacts
 
         self.sources = sources
-        self.facts = PyanFacts(sources)
+        self.facts = (facts_factory or LexicalFacts)(sources)
         self.symbols: dict[str, Symbol] = {}
+        self.children: dict[str, list[Symbol]] = {}
         self.by_node: dict[int, Symbol] = {}
         self.duplicates = set()
         self.scopes = {}
         self.modules = {s.module: s for s in sources}
+        self.module_prefixes = frozenset(".".join(module.split(".")[:size])
+                                         for module in self.modules for size in range(1, len(module.split(".")) + 1))
         self.globals = {s.module: State() for s in sources}
         self.class_states: dict[str, State] = {}
         self.class_summaries: dict[str, Summary] = {}
@@ -64,7 +100,7 @@ class Analysis:
             self._collect(source.tree, symbol)
         for symbol in self.symbols.values():
             if isinstance(symbol.node, FUNCTIONS):
-                nodes = list(self.own_nodes(symbol.node))
+                nodes = symbol.source.lexical_nodes[1].get(symbol.node, ())
                 if any(isinstance(node, (ast.Yield, ast.YieldFrom)) for node in nodes):
                     generators.add(symbol.name)
                 declared = {name for n in nodes if isinstance(n, ast.Global) for name in n.names}
@@ -106,32 +142,31 @@ class Analysis:
 
     def fork(self):
         """Reuse immutable binding facts and AST identities with fresh query state."""
-        shared = (self.sources, self.facts, self.symbols, self.by_node, self.modules, self.scopes, self.generators)
+        shared = (self.sources, self.facts, self.symbols, self.children, self.by_node,
+                  self.modules, self.scopes, self.generators, self.module_prefixes)
         return deepcopy(self, {id(value): value for value in shared})
 
     def _collect(self, node, parent):
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, DEFINITIONS):
-                short = child.name if hasattr(child, "name") else f"<lambda>@{child.lineno}:{child.col_offset}"
-                name = f"{parent.name}.{short}"
-                if name in self.symbols:
-                    self.duplicates.add(name)
-                kind = "class" if isinstance(child, ast.ClassDef) else "function"
-                decorators = tuple(ast.unparse(d) for d in getattr(child, "decorator_list", []))
-                owner = parent.name if parent.kind == "class" and kind == "function" else None
-                if owner:
-                    kind = (
-                        "classmethod"
-                        if "classmethod" in decorators
-                        else ("staticmethod" if "staticmethod" in decorators else "method")
-                    )
-                kind = self.facts.kind(name, kind) if self.facts else kind
-                symbol = Symbol(name, kind, child, parent.source, parent.name, owner, decorators)
-                self.symbols[name] = symbol
-                self.by_node[id(child)] = symbol
-                self._collect(child, symbol)
-            else:
-                self._collect(child, parent)
+        for child in parent.source.lexical_nodes[0].get(node, ()):
+            short = child.name if hasattr(child, "name") else f"<lambda>@{child.lineno}:{child.col_offset}"
+            name = f"{parent.name}.{short}"
+            if name in self.symbols:
+                self.duplicates.add(name)
+            kind = "class" if isinstance(child, ast.ClassDef) else "function"
+            decorators = tuple(ast.unparse(d) for d in getattr(child, "decorator_list", []))
+            owner = parent.name if parent.kind == "class" and kind == "function" else None
+            if owner:
+                kind = (
+                    "classmethod"
+                    if "classmethod" in decorators
+                    else ("staticmethod" if "staticmethod" in decorators else "method")
+                )
+            kind = self.facts.kind(name, kind) if self.facts else kind
+            symbol = Symbol(name, kind, child, parent.source, parent.name, owner, decorators)
+            self.symbols[name] = symbol
+            self.children.setdefault(parent.name, []).append(symbol)
+            self.by_node[id(child)] = symbol
+            self._collect(child, symbol)
 
     @staticmethod
     def own_nodes(node):
@@ -152,7 +187,7 @@ class Analysis:
                 "class" if symbol.kind == "class" else ("module" if symbol.kind == "module" else "function"),
                 name,
             )
-        if name in self.modules or any(m.startswith(name + ".") for m in self.modules):
+        if name in self.module_prefixes:
             return Value("module", name)
         return Value("external", name, reason="definition is outside the analysis input")
 

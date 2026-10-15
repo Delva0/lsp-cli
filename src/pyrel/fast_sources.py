@@ -13,6 +13,7 @@ class Definitions:
     def __init__(self, sources):
         self.sources = sources
         self.symbols, self.by_node, self.duplicates = {}, {}, set()
+        self.children = {}
         self.facts, self.diagnostics = None, []
         for source in sources:
             symbol = Symbol(source.module, "module", source.tree, source, None)

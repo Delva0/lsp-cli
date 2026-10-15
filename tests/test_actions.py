@@ -364,7 +364,7 @@ def inspect(value):
     rows = result["occurrences"]
     assert analyses
     assert {r["line"] for r in rows} == {4}
-    assert all(r["resolution"] == "resolved" and r["engine"] == "pyan3+flow" for r in rows)
+    assert all(r["resolution"] == "resolved" and r["engine"] == "python-flow" for r in rows)
 
 
 def test_calls_use_ty_and_unresolved_remains_unresolved():
@@ -438,7 +438,7 @@ def test_path_argument_continuation_uses_flow():
     source = "def leaf(): pass\ndef invoke(fn): fn()\ndef start(): invoke(leaf)\n"
     result = query("path", "start", "leaf", source=source)
     assert result["status"] == "found" and len(result["results"]) == 2
-    assert result["backend"]["fallback"] == "pyan3+flow"
+    assert result["backend"]["fallback"] == "python-flow"
 
 
 def test_completion_supports_incomplete_python():

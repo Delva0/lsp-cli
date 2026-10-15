@@ -326,7 +326,7 @@ wheels = [
 
 [[package]]
 name = "lsp-cli"
-version = "0.18.11"
+version = "0.18.12"
 source = { editable = "." }
 dependencies = [
     { name = "fastembed" },

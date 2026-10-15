@@ -127,11 +127,13 @@ def run():
 
 
 def test_git_reuses_inventory_blobs_and_analysis_with_original_query_metadata(repository, monkeypatch, capsys):
-    git_calls, builds = [], []
+    git_calls, blobs, builds = [], [], []
     original_git, original_analysis = session.GitSources.git, session.Analysis
 
     def read_git(self, *args, **kwargs):
         git_calls.append(args)
+        if args[0] == "cat-file":
+            blobs.extend(kwargs["input_data"].decode().splitlines() if "--batch" in args else [args[-1]])
         return original_git(self, *args, **kwargs)
 
     def analyze(sources):
@@ -143,7 +145,6 @@ def test_git_reuses_inventory_blobs_and_analysis_with_original_query_metadata(re
     assert cli.legacy_main(["show", "v1:Worker.run", "v1:Worker.ping", "--repo", str(repository), "--json"]) == 0
     body = json.loads(capsys.readouterr().out)
     assert sum(args[0] == "ls-tree" for args in git_calls) == 1
-    blobs = [args[-1] for args in git_calls if args[0] == "cat-file"]
     assert len(blobs) == len(set(blobs))
     assert len(builds) == 1
     direct, inherited = [row["git"] for row in body["queries"]]

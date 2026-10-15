@@ -20,11 +20,13 @@ def preserves_receiver(ws, source, function, receiver, attribute, order, *, befo
         ws.receiver_effects = cache = {}
     if key in cache:
         return cache[key]
-    catalog = ws.catalog
+    catalog = ws.catalog_for(source)
     active = active | {key}
     declarations = {}
     for cls in reversed(order):
-        for entry in catalog.entries:
+        if cls.name == "builtins.object":
+            continue
+        for entry in ws.catalog_for(cls.source).entries:
             if entry.parent == cls.name:
                 declarations[entry.name.rsplit(".", 1)[-1]] = entry
 
@@ -66,9 +68,9 @@ def preserves_receiver(ws, source, function, receiver, attribute, order, *, befo
                     names = [cls.name for cls in order]
                     if scope.parent.name not in names:
                         return False
-                    inherited = next((catalog.select(name + "." + node.func.attr)
+                    inherited = next((ws.lookup(name + "." + node.func.attr, exact=True)
                                       for name in names[names.index(scope.parent.name) + 1:]
-                                      if catalog.select(name + "." + node.func.attr)), [])
+                                      if ws.lookup(name + "." + node.func.attr, exact=True)), [])
                     if inherited:
                         if len(inherited) != 1 or not method_safe(inherited[0]):
                             return False
@@ -106,7 +108,7 @@ def preserves_receiver(ws, source, function, receiver, attribute, order, *, befo
                     if len(found) == 1 and found[0].kind == "class" and any(
                         cls.name == found[0].name for cls in order
                     ):
-                        methods = catalog.select(found[0].name + "." + func.attr)
+                        methods = ws.lookup(found[0].name + "." + func.attr, exact=True)
                         if len(methods) == 1 and method_safe(methods[0]):
                             continue
                 # A proven builtin super expression doesn't let the receiver escape.

@@ -18,6 +18,47 @@ from .test_git_sources import git, write
 from .test_git_sources import repository as repository  # noqa: PLC0414
 
 
+def test_interleaved_single_source_queries_do_not_rebuild_catalog_indexes(monkeypatch):
+    sources = [Source(f"m{i}.py", f"m{i}", "class C:\n def f(self): return 1\n") for i in range(20)]
+    indexed = []
+    original = Catalog._index
+
+    def record(self):
+        indexed.extend(source.name for source in self.sources)
+        original(self)
+
+    monkeypatch.setattr(Catalog, "_index", record)
+    with Session() as session:
+        for _ in range(3):
+            for source in sources:
+                assert session.catalog([source]).select(source.module + ".C.f")
+    assert sorted(indexed) == sorted(source.name for source in sources)
+
+
+def test_refs_batch_caller_binding_analysis_without_losing_contexts(repository, monkeypatch):
+    write(repository, "target.py", "class C:\n def run(self): return 1\n"
+          "def factory() -> C: return C()\n")
+    for index in range(4):
+        write(repository, f"caller{index}.py", "from target import factory\n"
+              "def start():\n obj = factory()\n missing()\n return obj.run()\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "multiple caller closures")
+    builds = []
+    original = Analysis.__init__
+
+    def record(self, sources, **kwargs):
+        builds.append({source.module for source in sources})
+        original(self, sources, **kwargs)
+
+    monkeypatch.setattr(Analysis, "__init__", record)
+    result = query("refs", "HEAD:target.C.run", "--roles", "call", "--repo", str(repository))
+    assert len(builds) == 1
+    assert {f"caller{i}" for i in range(4)} <= builds[0]
+    assert {row["source"] for row in result["occurrences"]} == {f"HEAD:caller{i}.py" for i in range(4)}
+    assert all(row["resolution"] == "resolved" and row["target"] == "target.C.run"
+               for row in result["occurrences"])
+
+
 def test_growing_catalog_tokenizes_each_source_once(monkeypatch):
     sources = [Source(f"m{i}.py", f"m{i}", f"def f(value):\n result = value + {i}\n return result\n")
                for i in range(5)]

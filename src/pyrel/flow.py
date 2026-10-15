@@ -74,8 +74,8 @@ class Walker:
             state = self.block(node.body, state)
         self.out.state = state
         if isinstance(node, FUNCTIONS):
-            for symbol in self.a.symbols.values():
-                if symbol.parent == self.symbol.name and isinstance(symbol.node, FUNCTIONS):
+            for symbol in self.a.children.get(self.symbol.name, ()):
+                if isinstance(symbol.node, FUNCTIONS):
                     self.a.closures[symbol.name] = dict(state.names)
         return self.out
 
