@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .analysis import Analysis
-from .git_sources import GitSources, decode
+from .git_sources import GitSources, SyntaxChecks, decode
 from .model import Source
 from .symbols import Catalog
 
@@ -28,6 +28,7 @@ class Session:
         self.source_catalogs = shared.source_catalogs if shared else OrderedDict()
         self.inputs = shared.inputs if shared else {}
         self.stdin_text = None
+        self.syntax_checks = shared.syntax_checks if shared else SyntaxChecks()
         self.lsp_engine = self.runner = None
         self.resources = shared.resources if shared else []
         self.lanes = []
@@ -52,7 +53,9 @@ class Session:
                 lane = len(self.assignments) % 4
                 self.assignments[key] = lane
                 if lane == len(self.lanes):
-                    self.lanes.append((ThreadPoolExecutor(max_workers=1, thread_name_prefix="lsp-revision"), Session()))
+                    owner = Session()
+                    owner.syntax_checks = self.syntax_checks
+                    self.lanes.append((ThreadPoolExecutor(max_workers=1, thread_name_prefix="lsp-revision"), owner))
             pool, owner = self.lanes[self.assignments[key]]
             pending.append(pool.submit(run, owner, function))
         return [future.result() for future in pending]
@@ -148,6 +151,7 @@ class Session:
             else:
                 self.revisions[key] = GitSources(
                     repository, revision, import_roots=args.import_root, max_files=args.max_files,
+                    syntax_checks=self.syntax_checks,
                 )
             if self.shared:
                 self.shared.revisions[key] = self.revisions[key]

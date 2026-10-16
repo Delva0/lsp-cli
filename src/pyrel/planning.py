@@ -56,13 +56,13 @@ def lexical_candidate(source, patterns, matcher, scopes=False, *, declarations=F
         elif prefix := regex_prefix(pattern, mode):
             pattern, mode = prefix + ".*", "glob"
         for expression in braces(pattern) if mode == "glob" else [pattern]:
-            if "/" in expression or expression.endswith((".py", ".pyi")):
+            if not expression or "/" in expression or expression.endswith((".py", ".pyi")):
                 return True
             first = expression.partition(".")[0]
-            if mode != "glob" or not first.isidentifier() or not first.isascii():
+            if mode != "glob" or not first.isascii() or "[" in first or "**" in first:
                 return True
             names = source.scope_names if declarations and "." in expression else source.declared_names
-            if first in names:
+            if matcher.indices(first, names):
                 return True
             parts = expression.split(".")
             if any(matcher.indices(".".join(parts[:size]), [source.module]) for size in range(1, len(parts) + 1)):
@@ -105,13 +105,22 @@ def candidate_paths(loader, pattern, mode, matcher, *, scopes=False, bindings=Fa
                 if (matcher.indices(pattern, packages)
                         or matcher.indices(pattern, [path, *directories], domain="file")):
                     selected.add(path)
-            return selected or set(paths)
-        return set(paths)
+            if not selected:
+                loader.validate_absence()
+            return selected
+        # A single-component glob must contain its literal fragments in either
+        # a source identifier or a module path. This is only a file prefilter;
+        # the catalog still establishes every declaration and binding.
+        fragments = re.findall(r"[A-Za-z0-9_]+", first) if "**" not in first else []
+        if not fragments:
+            return set(paths)
+        selected = set(loader.identifier_files(first, glob=True))
+    else:
+        selected = set(loader.identifier_files(first, scope="." in pattern and not bindings))
     # A matching qualified name starts in either its module path or a source
     # identifier. Include non-ASCII source too: Python normalizes identifiers.
     # A lexical address with children starts at a module, function or class.
     # Import/assignment aliases are resolved separately if no declaration matches.
-    selected = set(loader.identifier_files(first, scope="." in pattern and not bindings))
     modules = list(loader.modules)
     parts = pattern.split(".")
     for size in range(1, len(parts) + 1):
@@ -125,11 +134,13 @@ def candidate_paths(loader, pattern, mode, matcher, *, scopes=False, bindings=Fa
             directories = [str(parent) for parent in PurePosixPath(path).parents if str(parent) != "."]
             if matcher.indices(pattern, packages) or matcher.indices(pattern, directories, domain="file"):
                 selected.add(path)
-    if not selected and "." in pattern and not bindings:
+    if not selected and "." in pattern and not bindings and first.isidentifier():
         selected.update(loader.identifier_files(first))
-    # A negative result retains the existing syntax/budget validation contract.
-    # In particular, malformed inputs must not turn into a reliable absence.
-    return selected or set(paths)
+    # An absent name contributes no catalogs to a batch, while the existing
+    # syntax/discovery-limit checks still determine whether absence is reliable.
+    if not selected:
+        loader.validate_absence()
+    return selected
 
 
 def binding_inputs(ws, pattern, matcher):
@@ -217,7 +228,7 @@ def inherited_inputs(ws, pattern, mode, matcher):
         # classes. Its candidate scope is global, unlike a qualified member.
         matches = matcher.entries(pattern, [e for e in entries if e.parent in classes])
         if matches:
-            if member.isidentifier() and not matcher.ignore_case:
+            if not matcher.ignore_case:
                 roots = {entry.parent: classes[entry.parent] for entry in matches}
                 names = descendant_candidates(ws, list(roots.values()))
                 if names is not None:

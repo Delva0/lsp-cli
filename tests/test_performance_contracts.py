@@ -437,7 +437,8 @@ def test_external_base_preflight_does_not_hide_a_rebound_base(monkeypatch):
     "from .base import Root\nclass Left(Root): pass\nclass Right(Root): pass\nclass Child(Left, Right): pass\n",
     "from .base import Root\nclass Child(Root):\n def needle(self): return 2\nclass Grandchild(Child): pass\n",
 ])
-def test_bare_member_uses_ty_descendants_without_cataloging_unrelated_files(repository, monkeypatch, definition):
+@pytest.mark.parametrize("pattern", ["needle", "nee*", "n?ed*"])
+def test_bare_member_uses_ty_descendants_without_cataloging_unrelated_files(repository, monkeypatch, definition, pattern):
     from pyrel import planning
 
     write(repository, "src/pkg/base.py", "class Root:\n def needle(self): return 1\n")
@@ -446,7 +447,7 @@ def test_bare_member_uses_ty_descendants_without_cataloging_unrelated_files(repo
         write(repository, f"noise/other{number}.py", f"class Other{number}: pass\n")
     git(repository, "add", ".")
     git(repository, "commit", "-qm", "inherited member outside its declaration file")
-    args = ("show", "HEAD:needle", "--repo", str(repository))
+    args = ("show", "HEAD:" + pattern, "--repo", str(repository))
     with monkeypatch.context() as patch:
         patch.setattr(Workspace, "all", lambda *_args: pytest.fail("unrelated declarations are not descendants"))
         planned = query(*args)

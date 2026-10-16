@@ -16,10 +16,11 @@ import subprocess
 import tokenize
 import tomllib
 import unicodedata
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from copy import copy
 from difflib import get_close_matches
 from pathlib import Path, PurePosixPath
+from threading import Lock
 
 from .model import Source, module_name
 
@@ -36,10 +37,35 @@ def relative(path):
     return value.as_posix()
 
 
+class SyntaxChecks:
+    """Bounded, content-addressed syntax proofs shared by revision jobs."""
+
+    def __init__(self):
+        self.results = OrderedDict()
+        self.lock = Lock()
+
+    def check(self, oid, raw):
+        # Parsing holds the GIL anyway. Serialize identical misses so two sides
+        # of a diff do not parse the same immutable blob twice.
+        with self.lock:
+            if oid not in self.results:
+                try:
+                    ast.parse(decode(raw))
+                    error = None
+                except (SyntaxError, UnicodeError) as failure:
+                    error = failure.with_traceback(None)
+                self.results[oid] = error
+            self.results.move_to_end(oid)
+            error = self.results[oid]
+            while len(self.results) > 8192:
+                self.results.popitem(last=False)
+            return copy(error) if error else None
+
+
 class GitSources:
     """Resolve a revision once, then read all content by immutable object IDs."""
 
-    def __init__(self, repository, revision, *, import_roots=(), max_files=128):
+    def __init__(self, repository, revision, *, import_roots=(), max_files=128, syntax_checks=None):
         if max_files < 1:
             raise ValueError("--max-files must be positive")
         self.repository = str(Path(repository).resolve())
@@ -53,6 +79,7 @@ class GitSources:
         self._blob_cache = {}
         self._source_cache = {}
         self._search_cache = {}
+        self.syntax_checks = syntax_checks if syntax_checks is not None else SyntaxChecks()
         self.diagnostics = []
         self.raw = {}
         self.parsed = {}
@@ -328,12 +355,14 @@ class GitSources:
                              "--file PATH, or --import-root PATH")
         return selected
 
-    def identifier_files(self, name, *, scope=False):
+    def identifier_files(self, name, *, scope=False, glob=False):
         """Prefilter ASCII names without dropping normalized Unicode identifiers."""
-        key = (name, "scope" if scope else "identifier")
+        key = (name, "glob" if glob else "scope" if scope else "identifier")
         self.searches += 1
         if key not in self._search_cache:
-            expression = (rf"(def|class)[[:space:]]+{name}([^[:alnum:]_]|$)|\\$" if scope else name)
+            glob_pattern = re.escape(name).replace(r"\*", ".*").replace(r"\?", ".") if glob else None
+            expression = glob_pattern if glob else (
+                rf"(def|class)[[:space:]]+{name}([^[:alnum:]_]|$)|\\$" if scope else name)
             matches = self.git(
                 "grep", "-l", "-z", "-E", "-e", expression + "|[^ -~[:space:]]",
                 self.commit, "--", "*.py", allow_no_match=True,
@@ -348,7 +377,8 @@ class GitSources:
             # Non-ASCII comments must not send hundreds of unrelated modules
             # through AST/catalog construction. Normalize exactly as Python does
             # for identifiers; false positives in strings/comments are harmless.
-            pattern = re.compile((r"\b(?:def|class)\s+" if scope else r"(?<!\w)")
+            pattern = re.compile(glob_pattern if glob else
+                                 (r"\b(?:def|class)\s+" if scope else r"(?<!\w)")
                                  + re.escape(name) + r"(?!\w)")
             selected = []
             for path in candidates:
@@ -363,6 +393,26 @@ class GitSources:
                     selected.append(path)
             self._search_cache[key] = selected
         return self._search_cache[key]
+
+    def validate_absence(self):
+        """Preserve global no-match diagnostics without building symbol catalogs.
+
+        The text filter proves that no declaration can match. Syntax errors and
+        the explicit discovery budget still prevent a reliable absence. Parse
+        each candidate transiently; do not retain unrelated ASTs, lexical scopes
+        or binding data in the query. Immutable revision checks can be reused.
+        """
+        paths = sorted(self.paths)
+        checked, omitted = paths[:self.max_files], paths[self.max_files:]
+        self.omitted.update(omitted)
+        self.read_many(checked)
+        for path in checked:
+            error = self.syntax_checks.check(self.entries[path], self.raw[path])
+            if error and path not in self.failed:
+                if isinstance(error, SyntaxError):
+                    error.filename = f"{self.revision}:{path}"
+                self.failed.add(path)
+                self.diagnostics.append({"kind": "unparsed_source", "message": f"{self.revision}:{path}: {error}"})
 
     def query_candidates(self, selector):
         """Find actual declarations by name, including bindings and imports.

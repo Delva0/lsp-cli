@@ -1,0 +1,22 @@
+{
+  "version": "0.18.18",
+  "source_commit": "8d1d83192c8dc9e75286c222526393368891f4b4",
+  "date": "2026-10-16",
+  "tests": {
+    "graphub": "741 passed, 1 skipped",
+    "standalone": "714 passed"
+  },
+  "install_uninstall": "passed in an isolated uv tool directory",
+  "glob_diff_cold_seconds": [
+    4.858264303999022,
+    4.778127447003499,
+    4.905324021005072
+  ],
+  "glob_diff_warm_seconds": [
+    0.2951331959338859,
+    0.28737729601562023,
+    0.29439229506533593
+  ],
+  "all_six_stdout_identical": true,
+  "scope": "Performance fix; unchanged source, MRO/binding resolution and incomplete-input behavior."
+}

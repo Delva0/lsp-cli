@@ -9,6 +9,97 @@ from .test_git_sources import git, write
 from .test_git_sources import repository as repository  # noqa: PLC0414
 
 
+@pytest.mark.parametrize("action", ["show", "list", "diff"])
+@pytest.mark.parametrize("pattern", ["test_*preempt*", "test_?reempt*", "test_*leak*", "{missing,test_*preempt*}"])
+def test_name_glob_and_absent_batch_member_match_exhaustive_results(repository, monkeypatch, action, pattern):
+    # This fixture's v2 intentionally contains a syntax error. The exhaustive
+    # reference needs a valid unrelated base so additions/deletions are provable.
+    write(repository, "src/pkg/base.py", "class Base:\n def ping(self): return 1\n")
+    write(repository, "tests/cases.py", "def test_preempt_old(): return 1\ndef test_leak(): return 2\n")
+    write(repository, "tests/unicode.py", "def ｔｅｓｔ_preempt_unicode(): return 3\n")
+    for number in range(25):
+        write(repository, f"noise/n{number}.py", "# 非 ASCII 注释\ndef unrelated(): return 0\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "glob baseline")
+    git(repository, "tag", "glob-before")
+    write(repository, "tests/cases.py", "def test_preempt_added(): return 4\ndef test_leak(): return 5\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "added deleted and modified tests")
+    revision = "glob-before..HEAD" if action == "diff" else "HEAD"
+    args = (action, revision + ":" + pattern, "--repo", str(repository))
+    result = query(*args, "--max-files", "100" if "missing" in pattern else "8")
+    assert all(c["complete"] and c["parsed_files"] < 8
+               for q in result["queries"] for c in q["coverage"])
+    monkeypatch.setattr(batch, "candidate_paths", lambda loader, *_a, **_kw: set(loader.paths))
+    monkeypatch.setattr(batch, "lexical_candidate", lambda *_a, **_kw: True)
+    exhaustive = query(*args)
+    for key in ("results", "heads", "status"):
+        assert result.get(key) == exhaustive.get(key)
+    assert [q["matches"] for q in result["queries"]] == [q["matches"] for q in exhaustive["queries"]]
+
+
+def test_absent_name_does_not_parse_unrelated_sources_but_matching_syntax_errors_remain(repository):
+    for number in range(25):
+        write(repository, f"noise/n{number}.py", "def unrelated(): return 0\n")
+    write(repository, "src/pkg/base.py", "class Base:\n def ping(self): return 1\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "missing symbol and relevant invalid syntax")
+    for name in ("absent", "absent_*"):
+        result = query("show", "HEAD:" + name, "--repo", str(repository), status=1)
+        assert result["coverage"]["complete"] and result["coverage"]["parsed_files"] == 0
+    write(repository, "broken.py", "def broken_target(:\n")
+    git(repository, "add", "broken.py")
+    git(repository, "commit", "-qm", "invalid source must prevent reliable absence")
+    result = query("show", "HEAD:broken_*", "--repo", str(repository), status=2)
+    assert not result["coverage"]["complete"]
+    assert result["coverage"]["failed_files"] == ["broken.py"]
+
+
+def test_syntax_proofs_reuse_blobs_across_versions_without_reusing_error_locations(repository, monkeypatch):
+    from collections import Counter
+
+    from pyrel import git_sources
+    from pyrel.commands import parser
+    from pyrel.session import Session
+
+    broken = "def broken_target(\n"
+    fixed = "def fixed_target(): return 1\n"
+    for name in ("a.py", "b.py"):
+        write(repository, name, broken)
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "identical invalid blobs")
+    git(repository, "tag", "syntax-before")
+    write(repository, "b.py", fixed)
+    git(repository, "add", ".")
+    git(repository, "commit", "-qm", "new content must be validated")
+    counts = Counter()
+    original = git_sources.ast.parse
+
+    def parse(text, *args, **kwargs):
+        counts[text] += 1
+        return original(text, *args, **kwargs)
+
+    monkeypatch.setattr(git_sources.ast, "parse", parse)
+    args = parser().parse_args(["show", "HEAD:absent", "--repo", str(repository)])
+
+    def inspect(session, revision):
+        loader = session.git(args, revision)
+        loader.validate_absence()
+        return loader.failed, loader.diagnostics
+
+    with Session() as session:
+        before, after = session.parallel([
+            (revision, lambda lane, rev=revision: inspect(lane, rev))
+            for revision in ("syntax-before", "HEAD")
+        ])
+    assert counts[broken] == counts[fixed] == 1
+    assert {"a.py", "b.py"} <= before[0]
+    assert "a.py" in after[0] and "b.py" not in after[0]
+    assert any("syntax-before:b.py" in row["message"] for row in before[1])
+    assert any("HEAD:a.py" in row["message"] for row in after[1])
+    assert all("syntax-before" not in row["message"] for row in after[1])
+
+
 @pytest.mark.parametrize("pattern", ["**.ping", "*.ping", "**.leaf"])
 def test_glob_listing_with_literal_leaf_matches_full_inventory(repository, monkeypatch, pattern):
     write(repository, "extra.py", "class Child:\n def ping(self): pass\n")
