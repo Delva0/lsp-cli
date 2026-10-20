@@ -1,0 +1,37 @@
+name: Verify released lsp-cli on native Windows
+on:
+  push:
+    branches: [verify/windows-v0.18.18]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.5'
+      - name: Install the published wheel with all dependencies
+        run: uv tool install --python "${{ matrix.python }}" https://github.com/Delva0/lsp-cli/releases/download/v0.18.18/lsp_cli-0.18.18-py3-none-any.whl
+      - name: Probe the real CLI and pinned ty language server
+        shell: pwsh
+        run: |
+          $toolRoot = uv tool dir
+          $toolBin = uv tool dir --bin
+          $env:PATH = "$toolBin;$env:PATH"
+          $python = Join-Path $toolRoot 'lsp-cli/Scripts/python.exe'
+          & $python scripts/verify_windows.py
+          exit $LASTEXITCODE
+      - name: Preserve results, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-probe-${{ matrix.python }}
+          path: windows-probe.json
+          if-no-files-found: warn
