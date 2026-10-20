@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/uni
 With uv already installed:
 
 ```bash
-uv tool install --python 3.13 --reinstall 'git+https://github.com/Delva0/lsp-cli.git@v0.18.19'
+uv tool install --managed-python --python 3.13 --reinstall 'git+https://github.com/Delva0/lsp-cli.git@v0.18.19'
 uv tool uninstall lsp-cli
 ```
 
@@ -141,5 +141,7 @@ lsp list HEAD: --kinds class function
 ```
 
 Git must be installed in that container. Source queries do not require installing the target application's dependencies; missing external types may limit relationship resolution.
+
+For Windows development, set `$env:UV_MANAGED_PYTHON = '1'` before `uv sync --frozen` and `uv run --frozen pytest -q`. The retained internal Ladybug backend requires the OpenSSL DLLs supplied by uv-managed Python; the PowerShell installer selects this automatically.
 
 The analysis originated from Graphub 0.18.18; 0.18.19 adds native Windows runtime and path compatibility. `upstream-source.json` retains the original import hashes, with subsequent changes tracked in this repository's Git history. Licensed under MIT; dependency licenses remain their own.

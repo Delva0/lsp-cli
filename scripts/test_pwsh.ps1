@@ -61,7 +61,7 @@ def start(value):
     $null = Invoke-LspJson history 'v2:Client.send'
     $null = Invoke-LspJson diff 'v1..v2:Client.send'
     $null = Invoke-LspJson where 'v2:demo.py:10:8'
-    $completion = Invoke-LspJson complete 'v2:demo.py:15:18'
+    $completion = Invoke-LspJson complete 'v2:demo.py:15:22'
     if ('send' -notin $completion.results.label) { throw 'ty completion did not return send.' }
 
     $pipeResult = git show v1:demo.py | lsp show Client.send --json
