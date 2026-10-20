@@ -115,11 +115,12 @@ def terminate_worker(pid):
             raise ProcessLookupError(pid)
         raise ctypes.WinError(ctypes.get_last_error())
     try:
-        if not kernel.TerminateProcess(handle, 130):
-            # Termination may race with a normal idle exit.
-            if kernel.WaitForSingleObject(handle, 0) != 0:
-                raise ctypes.WinError(ctypes.get_last_error())
+        # TerminateProcess can report ACCESS_DENIED while ExitProcess is still
+        # releasing resources. Wait for that exit before deciding it failed.
+        error = None if kernel.TerminateProcess(handle, 130) else ctypes.WinError(ctypes.get_last_error())
         if kernel.WaitForSingleObject(handle, 5000) != 0:
+            if error is not None:
+                raise error
             raise TimeoutError(f"lsp worker {pid} did not exit")
     finally:
         kernel.CloseHandle(handle)

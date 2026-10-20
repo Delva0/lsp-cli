@@ -258,8 +258,17 @@ def test_git_query_does_not_wait_for_unused_stdin(repository, runtime):
         cwd=repository,
         env=runtime["env"],
     ) as process:
-        assert process.wait(timeout=10) == 0
-        stdout, stderr = process.communicate()
+        # Windows anonymous pipes are small. Drain output concurrently while
+        # deliberately keeping stdin open, or wait() tests pipe capacity.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            out = pool.submit(process.stdout.read)
+            err = pool.submit(process.stderr.read)
+            try:
+                assert process.wait(timeout=10) == 0
+            finally:
+                if process.poll() is None:
+                    process.kill()
+            stdout, stderr = out.result(), err.result()
     assert json.loads(stdout)["results"]
     stats = json.loads(
         next(line.removeprefix("lsp runtime: ") for line in stderr.splitlines() if line.startswith("lsp runtime: ")),
