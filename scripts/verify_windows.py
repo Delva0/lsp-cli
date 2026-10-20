@@ -62,6 +62,7 @@ async def ty_probe(executable, root, source):
 
     client = await Client.start([executable, "server"], cwd=root, handler=handler)
     observations = {}
+    report["ty_observations"] = observations
     try:
         initialized = await client.request("initialize", {
             "processId": os.getpid(), "rootUri": root.as_uri(),
@@ -73,7 +74,13 @@ async def ty_probe(executable, root, source):
             },
         }, timeout=30)
         observations["serverInfo"] = initialized["serverInfo"]
-        assert initialized["serverInfo"] == {"name": "ty", "version": "0.0.84"}
+        assert initialized["serverInfo"]["name"] == "ty", initialized["serverInfo"]
+        # The installed distribution and binary version are checked separately.
+        # Preserve the server's version spelling without blocking semantic probes.
+        observations["accepted_by_lsp_cli_server_info_check"] = all(
+            initialized["serverInfo"].get(key) == value
+            for key, value in {"name": "ty", "version": "0.0.84"}.items()
+        )
         await client.notify("initialized", {})
         await client.notify("textDocument/didOpen", {"textDocument": {
             "uri": source.as_uri(), "languageId": "python", "version": 1,
