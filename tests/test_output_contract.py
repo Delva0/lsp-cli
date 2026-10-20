@@ -290,7 +290,7 @@ def test_shared_file_input_error_is_reported_once(tmp_path):
     args = ("show", "first", "second", "third", "fourth", "--files", str(missing))
     status, out, err = invoke(*args)
     assert status == 2 and not out
-    assert err.splitlines() == [f"lsp: No files match '{missing}' in the working tree"]
+    assert err.splitlines() == [f"lsp: No files match {str(missing)!r} in the working tree"]
     result = query(*args, status=2)
     assert len(result["queries"]) == 4
     assert all(q["errors"][0]["scope"] == "input" for q in result["queries"])

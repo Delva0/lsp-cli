@@ -118,6 +118,8 @@ A short-lived local worker reuses parsed source and ty sessions between invocati
 
 All nine actions, Unicode/space paths, ty relationships and completion, concurrent calls, worker reuse, crash recovery, idle cleanup and PowerShell pipelines are tested in native Windows x64 CI on Python 3.13 and 3.14. The PowerShell test installs the built wheel into an isolated uv tool environment; it does not depend on a development checkout for imports. Windows ARM64 is not yet verified.
 
+One retained **internal Cypher** regression has a known Windows limitation: Ladybug 0.21.0 hangs while preparing `MATCH (a:Symbol {name:"__stdin__.leaf"}) OPTIONAL MATCH (a)-[:CALLS]->(b) RETURN b.name`. Windows CI runs this case with a 60-second subprocess deadline and records the timeout as an expected failure; all other regressions still run. [Native-engine diagnostics](https://github.com/Delva0/lsp-cli/actions/runs/39413295604) reproduce it with different transaction and optimizer settings. The internal `pyrel.cli.main` Cypher entry is separate from the nine public `lsp` actions, which do not use it. The dependency pin and query semantics remain unchanged.
+
 ## Development / container deployment
 
 ```bash

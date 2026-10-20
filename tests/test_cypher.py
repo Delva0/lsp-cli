@@ -92,7 +92,13 @@ def test_contexts_do_not_create_false_long_range_paths():
 @pytest.mark.parametrize(("text", "expected"), [
     ('MATCH (a:Symbol {name:"__stdin__.start"})-[:CALLS]->(b) WITH b '
      'MATCH (b)-[:CALLS]->(c) RETURN c.name', [["__stdin__.leaf"]]),
-    ('MATCH (a:Symbol {name:"__stdin__.leaf"}) OPTIONAL MATCH (a)-[:CALLS]->(b) RETURN b.name', [[None]]),
+    pytest.param(
+        'MATCH (a:Symbol {name:"__stdin__.leaf"}) OPTIONAL MATCH (a)-[:CALLS]->(b) RETURN b.name', [[None]],
+        marks=pytest.mark.xfail(
+            sys.platform == "win32", strict=True, raises=subprocess.TimeoutExpired,
+            reason="Ladybug 0.21.0 Windows native preparation hangs for this internal OPTIONAL MATCH query",
+        ),
+    ),
     ('MATCH (a:Symbol)-[c:CALLS]->(b) RETURN count(c), collect(b.name) ORDER BY count(c)',
      [[2, ["__stdin__.leaf", "__stdin__.mid"]]]),
     ('UNWIND [1,2,2] AS n WITH DISTINCT n RETURN n * 2 ORDER BY n', [[2], [4]]),

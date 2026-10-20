@@ -10,24 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  windows-cypher-probe:
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [direct, no-transaction, optimizer-off]
-    runs-on: windows-latest
-    timeout-minutes: 5
-    env:
-      PYTHONUTF8: '1'
-      UV_PYTHON: '3.13'
-      UV_MANAGED_PYTHON: '1'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-        with:
-          version: '0.12.5'
-      - run: uv sync --frozen
-      - run: uv run --frozen python scripts/probe_windows_cypher.py ${{ matrix.mode }}
   test:
     strategy:
       fail-fast: false
@@ -58,7 +40,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y ripgrep
       - run: uv sync --frozen --python ${{ matrix.python }}
       - name: Worker and platform contracts
-        run: uv run --frozen pytest -q tests/test_service.py tests/test_platform_support.py --maxfail=3 --junitxml=runtime-results.xml
+        run: uv run --frozen pytest -q tests/test_service.py tests/test_platform_support.py tests/test_output_contract.py::test_shared_file_input_error_is_reported_once --maxfail=3 --junitxml=runtime-results.xml
       - name: Build wheel
         run: uv build
       - name: PowerShell installation and installed-wheel smoke test
