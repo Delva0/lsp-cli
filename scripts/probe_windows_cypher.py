@@ -20,6 +20,8 @@ ladybug.Database = database
 original_execute = ladybug.Connection.execute
 def execute(self, query, *args, **kwargs):
     print("execute:", str(query)[:100], flush=True)
+    if sys.argv[2] == "text" and not isinstance(query, str):
+        query = text
     result = original_execute(self, query, *args, **kwargs)
     print("executed", flush=True)
     return result
@@ -27,13 +29,17 @@ ladybug.Connection.execute = execute
 graph = CodeGraph(Analysis([Source("a.py", "sample",
     "def leaf(): pass\ndef mid(): leaf()\ndef start(): mid()\n")]))
 graph.materialize()
-print(cypher.run(graph, 'MATCH (a:Symbol {name:"sample.leaf"}) '
-    'OPTIONAL MATCH (a)-[:CALLS]->(b) RETURN b.name'), flush=True)
+text = 'MATCH (a:Symbol {name:"sample.leaf"}) OPTIONAL MATCH (a)-[:CALLS]->(b) RETURN b.name'
+if sys.argv[2] == "no-udf":
+    cypher.install_diff = lambda *args: {}
+print(cypher.run(graph, text), flush=True)
 faulthandler.cancel_dump_traceback_later()
 '''
 
-for threads in (1, 2):
-    print(f"--- Native OPTIONAL MATCH: {threads} threads ---", flush=True)
-    result = subprocess.run([sys.executable, "-u", "-c", CHILD, str(threads)],
-                            capture_output=True, text=True, timeout=45)
-    print(result.stdout, result.stderr, "exit:", result.returncode, flush=True)
+for threads, mode in ((1, "prepared"), (2, "prepared"), (2, "text"), (2, "no-udf")):
+    print(f"--- Native OPTIONAL MATCH: {threads} threads, {mode} ---", flush=True)
+    try:
+        result = subprocess.run([sys.executable, "-u", "-c", CHILD, str(threads), mode], timeout=45)
+        print("exit:", result.returncode, flush=True)
+    except subprocess.TimeoutExpired:
+        print("Native query exceeded 45 seconds", flush=True)
