@@ -290,3 +290,16 @@ def test_separate_invocations_reuse_parsed_source_objects(repository):
         write(repository, "local.py", "value = 2\n")
         with Session(shared) as second:
             assert second.file(repository / "local.py") == "value = 2\n"
+
+
+def test_raw_stdout_preserves_utf8_and_crlf(repository, runtime):
+    source = 'def café():\r\n    return "你好"\r\n'.encode("utf-8")
+    result = subprocess.run(
+        [str(executable("lsp")), "show", "café", "--raw", "--stats"],
+        input=source, capture_output=True, cwd=repository, env=runtime["env"], timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    stats = json.loads(next(line.removeprefix("lsp runtime: ") for line in result.stderr.decode().splitlines()
+                            if line.startswith("lsp runtime: ")))
+    runtime["pids"].add(stats["worker_pid"])
+    assert result.stdout == source[:-2] + b"\n"
