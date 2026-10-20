@@ -21,7 +21,7 @@ ENGINE = [sys.executable, "-c", "from pyrel.cli import main; raise SystemExit(ma
 
 def invoke(*args, source=CHAIN, cwd=None):
     result = subprocess.run([*ENGINE, *args], input=source.encode("utf-8"), cwd=cwd,
-                            capture_output=True, check=False)
+                            capture_output=True, check=False, timeout=60)
     result.stdout = result.stdout.decode("utf-8").replace("\r\n", "\n")
     result.stderr = result.stderr.decode("utf-8").replace("\r\n", "\n")
     return result

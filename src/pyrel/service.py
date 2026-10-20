@@ -211,7 +211,8 @@ def invoke(argv):
         # pwsh pipes carry UTF-8, regardless of the Windows ANSI code page.
         for stream in (sys.stdout, sys.stderr):
             # Keep source bytes stable in pipes: CRLF must not become CRCRLF.
-            stream.reconfigure(encoding="utf-8", newline="")
+            if isinstance(stream, io.TextIOWrapper):
+                stream.reconfigure(encoding="utf-8", newline="")
         def interrupt(_signum, _frame):
             raise KeyboardInterrupt
 
