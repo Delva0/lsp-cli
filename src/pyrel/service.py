@@ -8,6 +8,7 @@ executable objects.
 """
 
 import base64
+import errno
 import gc
 import hashlib
 import importlib.util
@@ -181,18 +182,22 @@ def lease(path):
 
 def emit(result):
     """Write a CLI response, including buffered output, to its shell pipes."""
-    try:
-        sys.stdout.write(result["stdout"])
-        sys.stderr.write(result["stderr"])
-        sys.stdout.flush()
-        sys.stderr.flush()
-    except BrokenPipeError:
-        # The consumer has finished. Prevent another flush error at interpreter
-        # shutdown without changing SIGPIPE handling for the worker connection.
-        with open(os.devnull, "w") as sink:
-            os.dup2(sink.fileno(), sys.stdout.fileno())
-            os.dup2(sink.fileno(), sys.stderr.fileno())
-        return PIPE_EXIT
+    for stream, output in ((sys.stdout, result["stdout"]), (sys.stderr, result["stderr"])):
+        try:
+            stream.write(output)
+            stream.flush()
+        except OSError as error:
+            # The Windows CRT reports a closed anonymous pipe as EINVAL.
+            # Keep unrelated invalid-argument and disk errors visible.
+            if not isinstance(error, BrokenPipeError) and not (
+                WINDOWS and error.errno == errno.EINVAL and stat.S_ISFIFO(os.fstat(stream.fileno()).st_mode)
+            ):
+                raise
+            # Avoid another flush error at interpreter shutdown.
+            with open(os.devnull, "w") as sink:
+                os.dup2(sink.fileno(), sys.stdout.fileno())
+                os.dup2(sink.fileno(), sys.stderr.fileno())
+            return PIPE_EXIT
     return result["status"]
 
 
