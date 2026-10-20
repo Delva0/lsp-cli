@@ -1,20 +1,16 @@
 """Native platform contracts, also exercised by the Windows CI jobs."""
 
 import json
-import os
 import socket
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
 from graphub_lsp.lsp_worker import server_info_matches, uri_path
 from pyrel.platform_support import WINDOWS, lock_file
-from pyrel import service
-
-from .test_git_sources import git, write
+from .test_git_sources import git
 from .test_service import command, runtime  # noqa: F401
 from .test_git_sources import repository  # noqa: F401
 
@@ -79,6 +75,10 @@ def test_native_queries_in_unicode_space_directory(tmp_path, runtime):
     assert any(row["label"] == "café" for row in complete["results"])
     assert first["worker_pid"] == second["worker_pid"]
     assert first["ty_pids"] == second["ty_pids"]
+    local, _ = command(runtime, root, "show", "café", "--files", str(source))
+    assert "café" in local["results"][0]["code"]
+    local_complete, _ = command(runtime, root, "complete", str(source) + ":2:21", "--files", str(source))
+    assert any(row["label"] == "café" for row in local_complete["results"])
 
 
 @pytest.mark.skipif(not WINDOWS, reason="Windows job lifecycle and Winsock authentication")
@@ -135,8 +135,9 @@ def test_windows_worker_rejects_unauthenticated_requests(repository, runtime):
     _, before = command(runtime, repository, "refs", "v1:Base.ping")
     path, = Path(runtime["env"]["LSP_RUNTIME_DIR"]).glob("*.sock")
     endpoint = json.loads(path.read_text(encoding="utf-8"))
-    with socket.create_connection(("127.0.0.1", endpoint["port"]), timeout=5) as client:
-        client.sendall(b'{"token": "wrong", "argv": ["--version"]}\n')
-        assert client.recv(1024) == b""
+    for credentials in ({"token": "wrong"}, {"token": "中文"}, [], {"token": None}):
+        with socket.create_connection(("127.0.0.1", endpoint["port"]), timeout=5) as client:
+            client.sendall(json.dumps(credentials).encode() + b"\n")
+            assert client.recv(1024) == b""
     _, after = command(runtime, repository, "refs", "v1:Base.ping")
     assert after["worker_pid"] == before["worker_pid"]

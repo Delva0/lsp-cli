@@ -362,8 +362,11 @@ def serve(listener, path, token=None):
                         if token is not None:
                             client.settimeout(5)
                             auth = stream.readline(4096)
-                            supplied = json.loads(auth).get("token")
-                            if not isinstance(supplied, str) or not secrets.compare_digest(supplied, token):
+                            credentials = json.loads(auth)
+                            supplied = credentials.get("token") if isinstance(credentials, dict) else None
+                            if not isinstance(supplied, str) or not secrets.compare_digest(
+                                supplied.encode(), token.encode(),
+                            ):
                                 continue
                             send(stream, {"ready": token})
                             client.settimeout(None)

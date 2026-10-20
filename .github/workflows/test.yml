@@ -37,8 +37,10 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y ripgrep
       - run: uv sync --frozen --python ${{ matrix.python }}
+      - name: Worker and platform contracts
+        run: uv run --frozen pytest -q tests/test_service.py tests/test_platform_support.py --maxfail=3 --junitxml=runtime-results.xml
       - name: Regression suite
-        run: uv run --frozen pytest -q --junitxml=test-results.xml
+        run: uv run --frozen pytest -q --ignore=tests/test_service.py --ignore=tests/test_platform_support.py --junitxml=test-results.xml
       - name: Build wheel
         run: uv build
       - name: PowerShell installation and installed-wheel smoke test
@@ -61,4 +63,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tests-${{ matrix.os }}-${{ matrix.python }}
-          path: test-results.xml
+          path: '*-results.xml'

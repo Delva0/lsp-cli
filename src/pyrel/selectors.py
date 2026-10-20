@@ -1,6 +1,7 @@
 """Versioned addresses: symbol/path globs, brace sets and explicit rg expressions."""
 
 import fnmatch
+import os
 import re
 import subprocess
 from dataclasses import dataclass, replace
@@ -64,6 +65,8 @@ def revisions(value):
 
 
 def prefix(value, default=None):
+    if os.name == "nt" and re.match(r"^[A-Za-z]:[\\/]", value):
+        return default, value
     # A colon in a regex group, e.g. (?:foo|bar), is not a revision separator.
     match = re.match(r"^([^:\s()\[\]\\$|*?]+):", value)
     if match:
@@ -138,6 +141,8 @@ def expand(args, values=None):
         if args.command in {"where", "complete"}:
             address, line, column = position(value, args.command)
         revision, pattern = prefix(address, args.rev)
+        if os.name == "nt" and mode == "glob":
+            pattern = pattern.replace("\\", "/")
         if args.command != "list" and not pattern:
             raise ValueError("A target must not be empty; use ** to match all")
         revision = revision or ("HEAD" if args.repo or args.command == "history" else None)
@@ -205,6 +210,9 @@ class Matcher:
     def indices(self, pattern, names, *, mode="glob", domain="symbol"):
         """Original candidate indices; glob is whole-path or symbol suffix matching."""
         names = tuple(names)
+        if os.name == "nt" and domain == "file" and mode == "glob":
+            pattern = pattern.replace("\\", "/")
+            names = tuple(name.replace("\\", "/") for name in names)
         key = pattern, names, mode, domain
         if key not in self.cache:
             if mode == "glob":
@@ -253,6 +261,7 @@ class Matcher:
                 input="".join(name + "\n" for name in names),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 check=False,
             )
         except FileNotFoundError as error:
