@@ -31,7 +31,7 @@
         "git+https://github.com/Delva0/lsp-cli.git@$ref"
     }
     $python = if ($env:LSP_CLI_PYTHON) { $env:LSP_CLI_PYTHON } else { '3.13' }
-    & $uv tool install --python $python --reinstall $source
+    & $uv tool install --managed-python --python $python --reinstall $source
     if ($LASTEXITCODE -ne 0) { throw 'lsp-cli installation failed.' }
     $toolBin = (& $uv tool dir --bin | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Cannot locate the uv tool bin directory.' }

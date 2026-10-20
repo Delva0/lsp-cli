@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 30
     env:
       PYTHONUTF8: '1'
+      UV_PYTHON: ${{ matrix.python }}
+      UV_MANAGED_PYTHON: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

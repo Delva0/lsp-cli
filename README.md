@@ -23,7 +23,7 @@ lsp --version
 lsp --help
 ```
 
-The PowerShell installer activates `lsp` in the current session and adds the uv/tool directories to your user PATH for future terminals. It requires no administrator access, WSL, Docker, PowerShell profile edit or execution-policy change. PowerShell 7 uses UTF-8 for pipelines; Windows PowerShell 5.1 is not supported by the installer.
+The PowerShell installer uses uv-managed Python, activates `lsp` in the current session and adds the uv/tool directories to your user PATH for future terminals. It requires no administrator access, WSL, Docker, PowerShell profile edit or execution-policy change. PowerShell 7 uses UTF-8 for pipelines; Windows PowerShell 5.1 is not supported by the installer.
 
 On Linux/macOS (no sudo or shell startup edits):
 
