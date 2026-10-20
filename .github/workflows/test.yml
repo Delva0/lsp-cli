@@ -11,6 +11,10 @@ permissions:
 
 jobs:
   windows-cypher-probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [direct, no-transaction, optimizer-off]
     runs-on: windows-latest
     timeout-minutes: 5
     env:
@@ -23,7 +27,7 @@ jobs:
         with:
           version: '0.12.5'
       - run: uv sync --frozen
-      - run: uv run --frozen python scripts/probe_windows_cypher.py
+      - run: uv run --frozen python scripts/probe_windows_cypher.py ${{ matrix.mode }}
   test:
     strategy:
       fail-fast: false
