@@ -14,6 +14,7 @@ import pytest
 from pyrel import backend
 from pyrel.commands import ACTIONS, main
 from pyrel.session import Session
+from pyrel.platform_support import executable
 
 from .search_helpers import internal_search
 from .test_git_sources import git, write
@@ -53,7 +54,7 @@ def query(*args, source=CODE, status=0):
 
 def test_public_command_and_actions():
     run = subprocess.run(
-        [str(Path(sys.executable).with_name("lsp")), "--help"],
+        [str(executable("lsp")), "--help"],
         capture_output=True,
         text=True,
         check=True,

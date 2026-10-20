@@ -13,24 +13,40 @@ Source is returned with its original file and line numbers. Versioned queries re
 
 ## Install / uninstall
 
-Linux/macOS, Git and network access are required. The installer uses an isolated [uv tool environment](https://docs.astral.sh/uv/guides/tools/), installs uv if needed, and lets uv obtain Python 3.13. It does not modify shell startup files or require sudo.
+Windows (PowerShell 7 / `pwsh`), Linux and macOS are supported. Git and network access are required. The installer uses an isolated [uv tool environment](https://docs.astral.sh/uv/guides/tools/), installs uv if needed, and lets uv obtain Python 3.13 and the pinned ty backend. No separate Python or ty installation is needed.
+
+On Windows, install [Git for Windows](https://git-scm.com/install/windows) first if `git --version` fails, then reopen `pwsh` and run:
+
+```powershell
+irm https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/install.ps1 | iex
+lsp --version
+lsp --help
+```
+
+The PowerShell installer activates `lsp` in the current session and adds the uv/tool directories to your user PATH for future terminals. It requires no administrator access, WSL, Docker, PowerShell profile edit or execution-policy change. PowerShell 7 uses UTF-8 for pipelines; Windows PowerShell 5.1 is not supported by the installer.
+
+On Linux/macOS (no sudo or shell startup edits):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.18/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/install.sh | bash
 ```
 
 If `lsp` is not on your PATH, use the path printed by the installer (normally `~/.local/bin/lsp`), or add that directory to PATH. Installation downloads the pinned analysis dependencies; it is not a single static executable. No embedding model is downloaded by the public actions.
 
 Uninstall the isolated tool, keeping uv, Python, your repositories and shared download caches:
 
+```powershell
+irm https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/uninstall.ps1 | iex
+```
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.18/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/uninstall.sh | bash
 ```
 
 With uv already installed:
 
 ```bash
-uv tool install --python 3.13 'git+https://github.com/Delva0/lsp-cli.git@v0.18.18'
+uv tool install --python 3.13 --reinstall 'git+https://github.com/Delva0/lsp-cli.git@v0.18.19'
 uv tool uninstall lsp-cli
 ```
 
@@ -98,7 +114,9 @@ git show v2.31.0:requests/adapters.py | lsp refs conn.cert_reqs
 
 Direct source reads avoid starting semantic engines. Relationships use ty where available, supplemented by local lexical/control-flow analysis and validated C3 MRO. The default query path avoids building a redundant pyan3 graph; pyan3 remains a semantic regression oracle. Unresolved dynamic dispatch and imports outside the analysis input stay unresolved; an empty or partial result is not proof that no runtime relationship exists. Inspect the JSON coverage/diagnostics for automated consumers. CPU/IO and query size still matter; this is static evidence, not runtime execution.
 
-A short-lived local worker reuses parsed source and ty sessions between invocations and exits after 300 idle seconds by default (`LSP_IDLE_SECONDS` configures this). It is started automatically, uses a local Unix socket, and needs no service deployment. Temporary snapshots do not modify your checkout. See `src/pyrel/service.py` for the runtime contract.
+A short-lived local worker reuses parsed source and ty sessions between invocations and exits after 300 idle seconds by default (`LSP_IDLE_SECONDS` configures this). It starts automatically and needs no service deployment. Unix uses a local Unix socket; Windows uses an authenticated connection bound only to `127.0.0.1`, with a random token in your user temporary directory. Windows job objects ensure ty exits with its worker, including on cancellation or crashes. Temporary snapshots do not modify your checkout. See `src/pyrel/service.py` for the runtime contract.
+
+All nine actions, Unicode/space paths, ty relationships and completion, concurrent calls, worker reuse, crash recovery, idle cleanup and PowerShell pipelines are tested in native Windows x64 CI on Python 3.13 and 3.14. The PowerShell test installs the built wheel into an isolated uv tool environment; it does not depend on a development checkout for imports. Windows ARM64 is not yet verified.
 
 ## Development / container deployment
 
@@ -117,11 +135,11 @@ LSP_CLI_SOURCE="$PWD" bash scripts/install.sh
 `uv sync` installs the project editable for development. In a prepared Python 3.13 container, install the tagged source with pip and run from the mounted repository:
 
 ```bash
-python -m pip install 'git+https://github.com/Delva0/lsp-cli.git@v0.18.18'
+python -m pip install 'git+https://github.com/Delva0/lsp-cli.git@v0.18.19'
 cd /workspace/your-repository
 lsp list HEAD: --kinds class function
 ```
 
 Git must be installed in that container. Source queries do not require installing the target application's dependencies; missing external types may limit relationship resolution.
 
-This release carries the 0.18.18 analysis implementation. `upstream-source.json` records original source hashes; tests are carried over with package import paths adapted. Licensed under MIT; dependency licenses remain their own.
+The analysis originated from Graphub 0.18.18; 0.18.19 adds native Windows runtime and path compatibility. `upstream-source.json` retains the original import hashes, with subsequent changes tracked in this repository's Git history. Licensed under MIT; dependency licenses remain their own.

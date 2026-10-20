@@ -5,7 +5,7 @@ set -euo pipefail
 case "${1:-}" in
   -h|--help)
     printf '%s\n' 'Install lsp-cli with uv (Linux/macOS).' \
-      'Optional: LSP_CLI_REF=v0.18.18, LSP_CLI_SOURCE=/path/to/checkout' \
+      'Optional: LSP_CLI_REF=v0.18.19, LSP_CLI_SOURCE=/path/to/checkout' \
       'UV_TOOL_DIR and UV_TOOL_BIN_DIR are honored by uv.'
     exit 0 ;;
   '') ;;
@@ -23,7 +23,7 @@ else
   lsp_uv="${XDG_BIN_HOME:-$HOME/.local/bin}/uv"
 fi
 
-lsp_ref=${LSP_CLI_REF:-v0.18.18}
+lsp_ref=${LSP_CLI_REF:-v0.18.19}
 lsp_source=${LSP_CLI_SOURCE:-git+https://github.com/Delva0/lsp-cli.git@$lsp_ref}
 if [[ "$lsp_source" == git+* ]]; then
   command -v git >/dev/null 2>&1 || { printf '%s\n' 'git is required; install Git first.' >&2; exit 1; }

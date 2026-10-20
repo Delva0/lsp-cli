@@ -9,7 +9,6 @@ import sys
 import tempfile
 import tokenize
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
 
 from . import cli as legacy
 from .discovery import SelectionError
@@ -532,7 +531,7 @@ class Workspace:
         self.methods.append(method)
         if "error" in result:
             raise NeedsBindingsError(f"{method}: {result['error']['message']}")
-        self.native_root = Path(unquote(urlsplit(result["commit"]["rootUri"]).path))
+        self.native_root = Path.from_uri(result["commit"]["rootUri"])
         self.requests[key] = result.get("result")
         return self.requests[key]
 
@@ -551,7 +550,7 @@ class Workspace:
         }
 
     def location(self, uri, value):
-        path = Path(unquote(urlsplit(uri).path))
+        path = Path.from_uri(uri)
         if not self.native_root or not path.is_relative_to(self.native_root):
             return None
         relative = path.relative_to(self.native_root).as_posix()

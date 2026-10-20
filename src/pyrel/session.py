@@ -5,7 +5,6 @@ ref resolutions, file reads and discovery budgets; immutable source objects,
 analyses and native snapshots live until the owning session closes.
 """
 
-import sys
 import tokenize
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -14,6 +13,7 @@ from pathlib import Path
 from .analysis import Analysis
 from .git_sources import GitSources, SyntaxChecks, decode
 from .model import Source
+from .platform_support import executable
 from .symbols import Catalog
 
 
@@ -76,10 +76,10 @@ class Session:
             else:
                 from ...lsp.lsp_worker import Engine
             self.runner = asyncio.Runner()
-            executable = Path(sys.executable).with_name("ty")
+            ty = executable("ty")
             self.lsp_engine = Engine(
                 {
-                    "command": [str(executable) if executable.is_file() else "ty", "server"],
+                    "command": [str(ty) if ty.is_file() else "ty", "server"],
                     "timeout": 30,
                     "concurrency": 8,
                     "server_info": {"name": "ty", "version": "0.0.84"},

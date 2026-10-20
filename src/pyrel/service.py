@@ -8,24 +8,55 @@ executable objects.
 """
 
 import base64
-import fcntl
 import gc
 import hashlib
 import importlib.util
 import io
 import json
 import os
+import secrets
+import select
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from contextlib import chdir, redirect_stderr, redirect_stdout, suppress
 from pathlib import Path
 
 from .session import Session
+from .platform_support import PIPE_EXIT, WINDOWS, lock_file, terminate_worker, windows_job
+
+
+class SocketStream:
+    """JSON lines with interruptible waits, including Ctrl+C in PowerShell."""
+
+    def __init__(self, client):
+        self.client = client
+        self.pending = bytearray()
+
+    def write(self, data):
+        self.client.sendall(data)
+
+    def flush(self):
+        pass
+
+    def readline(self):
+        while b"\n" not in self.pending:
+            # A blocking Winsock recv does not wake for Python signal handlers.
+            if not select.select([self.client], [], [], 0.1)[0]:
+                continue
+            data = self.client.recv(65536)
+            if not data:
+                raise ConnectionError("lsp worker connection closed")
+            self.pending.extend(data)
+        line, _, remaining = self.pending.partition(b"\n")
+        self.pending = bytearray(remaining)
+        return bytes(line) + b"\n"
 
 
 def send(stream, message):
@@ -49,6 +80,7 @@ def endpoint(argv):
         ["git", "-C", str(root), "rev-parse", "--absolute-git-dir"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     identity = found.stdout.strip() if found.returncode == 0 else str(root)
@@ -59,50 +91,77 @@ def endpoint(argv):
     for path in sorted([*Path(__file__).parent.glob("*.py"), *native_root.glob("*.py")]):
         digest.update(str(path).encode())
         digest.update(path.read_bytes())
-    directory = Path(os.environ.get("LSP_RUNTIME_DIR", Path(tempfile.gettempdir()) / f"lsp-cli-{os.getuid()}"))
+    default = Path(tempfile.gettempdir()) / ("lsp-cli" if WINDOWS else f"lsp-cli-{os.getuid()}")
+    directory = Path(os.environ.get("LSP_RUNTIME_DIR", default))
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     directory.chmod(0o700)
     return directory / (digest.hexdigest()[:20] + ".sock")
 
 
 def connect(path):
-    client = socket.socket(socket.AF_UNIX)
+    client = socket.socket(socket.AF_INET if WINDOWS else socket.AF_UNIX)
     try:
-        client.connect(str(path))
-    except OSError:
+        if WINDOWS:
+            endpoint = json.loads(path.read_text(encoding="utf-8"))
+            client.settimeout(30)
+            client.connect(("127.0.0.1", endpoint["port"]))
+            with client.makefile("rwb") as stream:
+                send(stream, {"token": endpoint["token"]})
+                if receive(stream) != {"ready": endpoint["token"]}:
+                    raise ConnectionError("lsp worker authentication failed")
+            client.settimeout(None)
+        else:
+            client.connect(str(path))
+    except BaseException:
         client.close()
         raise
     return client
 
 
 def connection(path):
-    with path.with_suffix(".lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with path.with_suffix(".lock").open("ab") as lock:
+        lock_file(lock)
         try:
             return connect(path)
-        except (FileNotFoundError, ConnectionRefusedError):
+        except (FileNotFoundError, ConnectionError, TimeoutError):
             path.unlink(missing_ok=True)
         directory = path.with_suffix(".work")
         if directory.exists():
-            shutil.rmtree(directory)
+            remove_work(directory)
         directory.mkdir(mode=0o700)
-        with socket.socket(socket.AF_UNIX) as listener:
-            listener.bind(str(path))
+        with socket.socket(socket.AF_INET if WINDOWS else socket.AF_UNIX) as listener:
+            token = None
+            if WINDOWS:
+                listener.bind(("127.0.0.1", 0))
+                token = secrets.token_hex(32)
+                path.write_text(json.dumps({"port": listener.getsockname()[1], "token": token}), encoding="utf-8")
+            else:
+                listener.bind(str(path))
             path.chmod(0o600)
             listener.listen()
             with path.with_suffix(".log").open("ab") as log:
                 # Inherit the already listening socket so concurrent first calls
                 # cannot launch competing workers or need startup polling.
-                subprocess.Popen(
+                process = subprocess.Popen(
                     [sys.executable, "-I", "-m", __name__, str(listener.fileno()), str(path)],
-                    stdin=subprocess.DEVNULL,
+                    stdin=subprocess.PIPE if WINDOWS else subprocess.DEVNULL,
                     stdout=log,
                     stderr=log,
                     cwd=Path(__file__).parent,
-                    pass_fds=(listener.fileno(),),
-                    start_new_session=True,
-                    env={**os.environ, "TMPDIR": str(directory)},
+                    env={**os.environ, "TMPDIR": str(directory), "TMP": str(directory), "TEMP": str(directory)},
+                    **(
+                        {"creationflags": subprocess.CREATE_NO_WINDOW}
+                        if WINDOWS else {"pass_fds": (listener.fileno(),), "start_new_session": True}
+                    ),
                 )
+                if WINDOWS:
+                    try:
+                        # Winsock sockets are duplicated explicitly, not inherited
+                        # via POSIX file descriptors. No pickle crosses the socket.
+                        send(process.stdin, {"socket": base64.b64encode(listener.share(process.pid)).decode(),
+                                             "token": token})
+                    finally:
+                        process.stdin.close()
         return connect(path)
 
 
@@ -110,9 +169,9 @@ def lease(path):
     slot = 0
     while True:
         candidate = path.with_name(f"{path.stem}-{slot}.sock")
-        lock = candidate.with_suffix(".lease").open("w")
+        lock = candidate.with_suffix(".lease").open("ab")
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_file(lock, blocking=False)
         except BlockingIOError:
             lock.close()
             slot += 1
@@ -133,7 +192,7 @@ def emit(result):
         with open(os.devnull, "w") as sink:
             os.dup2(sink.fileno(), sys.stdout.fileno())
             os.dup2(sink.fileno(), sys.stderr.fileno())
-        return 128 + signal.SIGPIPE
+        return PIPE_EXIT
     return result["status"]
 
 
@@ -143,6 +202,21 @@ def invoke(argv):
     Args:
         argv: The original CLI arguments, interpreted in the caller's directory.
     """
+    if WINDOWS:
+        # pwsh pipes carry UTF-8, regardless of the Windows ANSI code page.
+        for stream in (sys.stdout, sys.stderr):
+            stream.reconfigure(encoding="utf-8")
+        def interrupt(_signum, _frame):
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGBREAK, interrupt)
+    try:
+        return dispatch(argv)
+    except KeyboardInterrupt:
+        return 130
+
+
+def dispatch(argv):
     stdout, stderr = io.StringIO(), io.StringIO()
     path = None
     with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -157,7 +231,8 @@ def invoke(argv):
     if path is None:
         return emit({"stdout": stdout.getvalue(), "stderr": stderr.getvalue(), "status": status})
     path, lock = lease(path)
-    with lock, connection(path) as client, client.makefile("rwb") as stream:
+    with lock, connection(path) as client:
+        stream = SocketStream(client)
         send(stream, {"argv": argv, "cwd": str(Path.cwd()), "tty": sys.stdin.isatty()})
         pid = receive(stream)["pid"]
         finished = False
@@ -179,7 +254,10 @@ def invoke(argv):
             signal.signal(signal.SIGTERM, previous)
             if not finished:
                 with suppress(ProcessLookupError):
-                    os.kill(pid, signal.SIGINT)
+                    terminate_worker(pid)
+                if WINDOWS:
+                    path.unlink(missing_ok=True)
+                    remove_work(path.with_suffix(".work"))
         return emit(result)
 
 
@@ -239,7 +317,28 @@ def execute(request, stream, shared):
     return {"stdout": stdout.getvalue(), "stderr": stderr.getvalue(), "status": status}
 
 
-def serve(fd, path):
+def remove_work(directory):
+    def writable(function, path, error):
+        if not WINDOWS or not isinstance(error, PermissionError):
+            raise error
+        os.chmod(path, os.stat(path).st_mode | stat.S_IWRITE)
+        function(path)
+
+    # Windows may briefly retain mapped DLLs/files after job termination.
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            shutil.rmtree(directory, onexc=writable)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if not WINDOWS or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+def serve(listener, path, token=None):
     inode = path.stat().st_ino
     # The worker owns this process. AST-heavy queries keep most objects alive;
     # the default 700-object nursery repeatedly scans that retained graph.
@@ -251,7 +350,7 @@ def serve(fd, path):
 
     signal.signal(signal.SIGTERM, terminate)
     try:
-        with socket.socket(fileno=fd) as listener, Session() as shared:
+        with listener, Session() as shared:
             listener.settimeout(float(os.environ.get("LSP_IDLE_SECONDS", "300")))
             while True:
                 try:
@@ -260,10 +359,18 @@ def serve(fd, path):
                     return
                 with client, client.makefile("rwb") as stream:
                     try:
+                        if token is not None:
+                            client.settimeout(5)
+                            auth = stream.readline(4096)
+                            supplied = json.loads(auth).get("token")
+                            if not isinstance(supplied, str) or not secrets.compare_digest(supplied, token):
+                                continue
+                            send(stream, {"ready": token})
+                            client.settimeout(None)
                         request = receive(stream)
                         send(stream, {"pid": os.getpid()})
                         send(stream, execute(request, stream, shared))
-                    except (ConnectionError, BrokenPipeError):
+                    except (ConnectionError, BrokenPipeError, TimeoutError, ValueError):
                         # A closed frontend must not prevent later invocations.
                         continue
     except KeyboardInterrupt:
@@ -272,8 +379,13 @@ def serve(fd, path):
         # A replacement worker may already own the same endpoint after a crash.
         if path.exists() and path.stat().st_ino == inode:
             path.unlink()
-            shutil.rmtree(path.with_suffix(".work"))
+            remove_work(path.with_suffix(".work"))
 
 
 if __name__ == "__main__":
-    serve(int(sys.argv[1]), Path(sys.argv[2]))
+    if WINDOWS:
+        job = windows_job()
+        startup = receive(sys.stdin.buffer)
+        serve(socket.fromshare(base64.b64decode(startup["socket"])), Path(sys.argv[2]), startup["token"])
+    else:
+        serve(socket.socket(fileno=int(sys.argv[1])), Path(sys.argv[2]))

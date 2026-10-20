@@ -4,7 +4,7 @@ import ast
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 
 from .fast_sources import Definitions, NeedsBindingsError, collect
 
@@ -39,7 +39,7 @@ class Native:
         self.api_calls.append(method)
         if "error" in response:
             raise NeedsBindingsError("LSP " + method + ": " + response["error"]["message"])
-        self.root = Path(unquote(urlsplit(response["commit"]["rootUri"]).path))
+        self.root = Path.from_uri(response["commit"]["rootUri"])
         return response["result"] or []
 
     def params(self, symbol):
@@ -50,7 +50,7 @@ class Native:
         parsed = urlsplit(uri)
         if parsed.scheme != "file":
             return None
-        path = Path(unquote(parsed.path))
+        path = Path.from_uri(uri)
         if not path.is_relative_to(self.root):
             return None
         relative = path.relative_to(self.root).as_posix()
@@ -80,7 +80,7 @@ class Native:
         source = self.source(item["uri"])
         if source:
             return self.symbol_at(source, item["selectionRange"])
-        path = Path(unquote(urlsplit(item["uri"]).path))
+        path = Path.from_uri(item["uri"])
         if item.get("detail") == "builtins" and path.name == "builtins.pyi" and path.parent.name == "stdlib":
             # The server resolved this occurrence to its typeshed declaration;
             # a same-named local definition takes the repository branch above.

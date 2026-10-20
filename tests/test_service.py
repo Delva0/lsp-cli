@@ -14,6 +14,8 @@ import pytest
 
 from pyrel.commands import parser
 from pyrel.session import Session
+from pyrel.platform_support import PIPE_EXIT, WINDOWS, executable, terminate_worker
+from pyrel.service import remove_work
 
 from .test_git_sources import git, write
 from .test_git_sources import repository as repository  # noqa: PLC0414
@@ -26,7 +28,11 @@ def runtime(tmp_path_factory):
     yield state
     for pid in state["pids"]:
         with suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGINT)
+            terminate_worker(pid)
+    if WINDOWS:
+        for endpoint in directory.glob("*.sock"):
+            endpoint.unlink()
+            remove_work(endpoint.with_suffix(".work"))
     deadline = time.monotonic() + 5
     while list(directory.glob("*.sock")) and time.monotonic() < deadline:
         time.sleep(0.02)
@@ -35,10 +41,11 @@ def runtime(tmp_path_factory):
 
 def command(runtime, cwd, *args, source="", status=0):
     result = subprocess.run(
-        [str(Path(sys.executable).with_name("lsp")), *args, "--json", "--stats"],
+        [str(executable("lsp")), *args, "--json", "--stats"],
         input=source,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=cwd,
         env=runtime["env"],
         timeout=30,
@@ -143,7 +150,10 @@ def test_completion_reuses_source_content_without_reusing_labels(repository, run
 
 def test_worker_crash_restarts_and_idle_exit_cleans_native_resources(repository, runtime):
     _, first = command(runtime, repository, "refs", "v1:Base.ping")
-    os.kill(first["worker_pid"], signal.SIGKILL)
+    if WINDOWS:
+        terminate_worker(first["worker_pid"])
+    else:
+        os.kill(first["worker_pid"], signal.SIGKILL)
     time.sleep(0.05)
     _, restarted = command(runtime, repository, "refs", "v1:Base.ping")
     assert first["worker_pid"] != restarted["worker_pid"]
@@ -176,13 +186,13 @@ def test_closed_output_pipe_is_quiet_and_worker_remains_usable(repository, runti
     os.close(read_fd)
     try:
         result = subprocess.run(
-            [str(Path(sys.executable).with_name("lsp")), "show", "sample", "--files", str(path)],
+            [str(executable("lsp")), "show", "sample", "--files", str(path)],
             stdin=subprocess.DEVNULL, stdout=write_fd, stderr=subprocess.PIPE,
             cwd=repository, env=runtime["env"], timeout=30, check=False,
         )
     finally:
         os.close(write_fd)
-    assert result.returncode == 128 + signal.SIGPIPE
+    assert result.returncode == PIPE_EXIT, result.stderr
     assert result.stderr == b""
     # The output pipe belongs to this client, not to the reusable analyzer.
     data, stats = command(runtime, repository, "show", "sample", "--files", str(path))
@@ -199,7 +209,7 @@ def test_early_cli_output_handles_closed_pipe_without_traceback(tmp_path, args, 
     os.close(read_fd)
     try:
         result = subprocess.run(
-            [str(Path(sys.executable).with_name("lsp")), *args],
+            [str(executable("lsp")), *args],
             stdin=subprocess.DEVNULL,
             stdout=write_fd if stream == "stdout" else subprocess.PIPE,
             stderr=write_fd if stream == "stderr" else subprocess.PIPE,
@@ -207,13 +217,13 @@ def test_early_cli_output_handles_closed_pipe_without_traceback(tmp_path, args, 
         )
     finally:
         os.close(write_fd)
-    assert result.returncode == 128 + signal.SIGPIPE
+    assert result.returncode == PIPE_EXIT, result.stderr
     assert not (result.stderr if stream == "stdout" else result.stdout)
 
 
 def test_blocked_stdin_query_does_not_serialize_an_independent_call(repository, runtime):
     with subprocess.Popen(
-        [str(Path(sys.executable).with_name("lsp")), "show", "leaf", "--json", "--stats"],
+        [str(executable("lsp")), "show", "leaf", "--json", "--stats"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -240,7 +250,7 @@ def test_blocked_stdin_query_does_not_serialize_an_independent_call(repository, 
 
 def test_git_query_does_not_wait_for_unused_stdin(repository, runtime):
     with subprocess.Popen(
-        [str(Path(sys.executable).with_name("lsp")), "show", "v1:Base.ping", "--json", "--stats"],
+        [str(executable("lsp")), "show", "v1:Base.ping", "--json", "--stats"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

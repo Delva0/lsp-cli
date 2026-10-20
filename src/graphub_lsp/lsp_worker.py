@@ -8,13 +8,14 @@ import asyncio
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import time
 import tokenize
 from contextlib import suppress
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 
 if __package__:
     from .lsp_client import Client, RPCError, frame, read_message
@@ -41,10 +42,25 @@ def uri_path(uri):
     parsed = urlsplit(uri)
     if parsed.scheme != "file" or parsed.netloc not in ("", "localhost") or parsed.query or parsed.fragment:
         raise ValueError("Use an absolute file:// URI in standard LSP parameters")
-    path = Path(unquote(parsed.path))
+    path = Path.from_uri(uri)
     if not path.is_absolute():
         raise ValueError("LSP document URIs must be absolute")
     return path
+
+
+def server_info_matches(actual, expected):
+    """Match the pin, allowing ty's Windows release commit/date suffix."""
+    for key, value in expected.items():
+        found = actual.get(key)
+        if found == value:
+            continue
+        if (
+            key == "version" and expected.get("name") == "ty" and isinstance(found, str)
+            and re.fullmatch(re.escape(value) + r" \([0-9a-f]+ \d{4}-\d{2}-\d{2}\)", found)
+        ):
+            continue
+        return False
+    return True
 
 
 class Session:
@@ -85,7 +101,7 @@ class Session:
         }, timeout=self.config.get("timeout", 60))
         if expected := self.config.get("server_info"):
             actual = self.initialize_result.get("serverInfo", {})
-            if any(actual.get(key) != value for key, value in expected.items()):
+            if not server_info_matches(actual, expected):
                 raise ValueError(f"Installed server does not match pinned server_info: {actual}")
         await self.client.notify("initialized", {})
         await self.client.notify("workspace/didChangeConfiguration", {"settings": self.config.get("settings", {})})

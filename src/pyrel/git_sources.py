@@ -71,7 +71,9 @@ class GitSources:
         self.repository = str(Path(repository).resolve())
         bare = self.git("rev-parse", "--is-bare-repository").strip() == b"true"
         # Search from the repository root even when cwd has a different layout in this revision.
-        self.repository = self.git("rev-parse", "--absolute-git-dir" if bare else "--show-toplevel").decode().strip()
+        self.repository = str(Path(
+            self.git("rev-parse", "--absolute-git-dir" if bare else "--show-toplevel").decode().strip(),
+        ))
         self.revision = revision
         self.commit = self.resolve_revision(revision)
         self.max_files = max_files
