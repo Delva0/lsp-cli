@@ -59,6 +59,27 @@ def test_lock_is_exclusive_and_released_on_close(tmp_path):
     assert probe() == 0
 
 
+def test_retained_cypher_backend_loads_its_native_libraries():
+    from .test_cypher import query, values
+
+    if WINDOWS:
+        code = """
+import sys
+from pathlib import Path
+import ladybug
+from pyrel.platform_support import native_dlls
+print("Python DLLs:", [str(p) for p in Path(sys.base_prefix).rglob("*.dll")
+                      if p.name.lower().startswith(("libssl", "libcrypto", "vcruntime"))])
+with native_dlls(ladybug):
+    import ladybug._lbug
+"""
+        native = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20)
+        assert native.returncode == 0, native.stdout + native.stderr
+    result = query('MATCH (s:Symbol {root:true}) RETURN s.name', "run", "--module", "sample",
+                   source="def run(): pass\n")
+    assert values(result) == [["sample.run"]]
+
+
 def test_native_queries_in_unicode_space_directory(tmp_path, runtime):
     root = tmp_path / "中文 workspace space"
     root.mkdir()

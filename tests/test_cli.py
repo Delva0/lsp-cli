@@ -26,7 +26,13 @@ def test_public_help_exposes_symbol_commands_without_cypher():
 
 
 def invoke(*args, source=CODE, cwd=None):
-    return subprocess.run([*CLI, *args], input=source, text=True, capture_output=True, check=False, cwd=cwd)
+    # Preserve fixture bytes, including deliberate CRLF; Windows text-mode
+    # stdin would turn LF into CRLF and existing CRLF into CRCRLF.
+    result = subprocess.run([*CLI, *args], input=source.encode("utf-8"),
+                            capture_output=True, check=False, cwd=cwd)
+    result.stdout = result.stdout.decode("utf-8").replace("\r\n", "\n")
+    result.stderr = result.stderr.decode("utf-8").replace("\r\n", "\n")
+    return result
 
 
 @pytest.mark.parametrize(

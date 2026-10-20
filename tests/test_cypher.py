@@ -20,7 +20,11 @@ ENGINE = [sys.executable, "-c", "from pyrel.cli import main; raise SystemExit(ma
 
 
 def invoke(*args, source=CHAIN, cwd=None):
-    return subprocess.run([*ENGINE, *args], input=source, cwd=cwd, text=True, capture_output=True, check=False)
+    result = subprocess.run([*ENGINE, *args], input=source.encode("utf-8"), cwd=cwd,
+                            capture_output=True, check=False)
+    result.stdout = result.stdout.decode("utf-8").replace("\r\n", "\n")
+    result.stderr = result.stderr.decode("utf-8").replace("\r\n", "\n")
+    return result
 
 
 def query(text, *args, source=CHAIN, cwd=None):

@@ -258,17 +258,17 @@ class Matcher:
                     "--",
                     "-",
                 ],
-                input="".join(name + "\n" for name in names),
+                # Preserve LF: text-mode stdin becomes CRLF on Windows, which
+                # changes anchored rg expressions such as ^name$.
+                input="".join(name + "\n" for name in names).encode("utf-8"),
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
                 check=False,
             )
         except FileNotFoundError as error:
             raise ValueError("ripgrep (rg) is required for -e/-F matching; -P requires PCRE2 support") from error
         if found.returncode not in (0, 1):
-            raise ValueError("rg: " + found.stderr.strip())
-        return tuple(int(line.partition(":")[0]) - 1 for line in found.stdout.splitlines())
+            raise ValueError("rg: " + found.stderr.decode("utf-8", errors="replace").strip())
+        return tuple(int(line.partition(":")[0]) - 1 for line in found.stdout.decode("utf-8").splitlines())
 
     def entries(self, pattern, entries, *, mode="glob"):
         if mode == "glob":

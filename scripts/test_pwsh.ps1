@@ -86,7 +86,11 @@ def start(value):
     Write-Host 'PASS: idle shutdown and cleanup'
 } finally {
     Pop-Location
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    while ((Get-ChildItem $env:LSP_RUNTIME_DIR -Filter '*.sock' -ErrorAction SilentlyContinue) -and [DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 100
+    }
     $env:LSP_IDLE_SECONDS = $oldIdle
     $env:LSP_RUNTIME_DIR = $oldRuntime
-    Remove-Item -LiteralPath $root -Recurse -Force
+    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Continue
 }

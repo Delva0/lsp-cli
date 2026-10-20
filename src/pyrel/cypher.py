@@ -16,6 +16,7 @@ from collections import defaultdict
 from .code_graph import SourceCode, SourceDiff, Walk, evidence, identity, serialize
 from .git_queries import unified
 from .model import source_lines
+from .platform_support import native_dlls
 from .source_view import show
 
 ENGINE = {"name": "Ladybug", "version": "0.21.0", "dialect": "Ladybug Cypher",
@@ -291,7 +292,7 @@ def run(graph, text, parameters=None, *, timeout_ms=30000, max_rows=1000):
     required = block + (len(graph.nodes) + len(graph.edges)) * 4096
     buffer_pool_size = min(512 * 1024 * 1024, max(64 * 1024 * 1024, ((required + block - 1) // block) * block))
     try:
-        with ladybug.Database(buffer_pool_size=buffer_pool_size, max_num_threads=2) as database:
+        with native_dlls(ladybug), ladybug.Database(buffer_pool_size=buffer_pool_size, max_num_threads=2) as database:
             with ladybug.Connection(database) as connection:
                 source_views = load_graph(connection, graph)
                 diff_views = install_diff(connection, source_views)

@@ -69,7 +69,9 @@ class Session:
     def __init__(self, repo, oid, config):
         self.repo, self.oid, self.config = repo, oid, config
         self.temp = tempfile.TemporaryDirectory(prefix="graphub-lsp-")
-        self.root = Path(self.temp.name) / "source"
+        # Windows TEMP can use an 8.3 alias (RUNNER~1). Compare canonical paths
+        # on both sides of the symlink boundary check.
+        self.root = (Path(self.temp.name) / "source").resolve()
         self.client, self.initialize_result = None, None
         self.opened, self.document_lock = set(), asyncio.Lock()
         self.timings = {}

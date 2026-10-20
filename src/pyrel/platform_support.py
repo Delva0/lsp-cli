@@ -5,6 +5,7 @@ import os
 import signal
 import sys
 import time
+from contextlib import contextmanager, ExitStack
 from pathlib import Path
 
 
@@ -14,6 +15,21 @@ PIPE_EXIT = 128 + getattr(signal, "SIGPIPE", 13)
 
 def executable(name):
     return Path(sys.executable).with_name(name + (".exe" if WINDOWS else ""))
+
+
+@contextmanager
+def native_dlls(package):
+    """Resolve Windows wheel dependencies without changing the user's PATH."""
+    with ExitStack() as stack:
+        if WINDOWS:
+            for path in (
+                Path(sys.base_prefix),
+                Path(sys.base_prefix) / "DLLs",
+                Path(package.__file__).parent.parent / (package.__name__ + ".libs"),
+            ):
+                if path.is_dir():
+                    stack.enter_context(os.add_dll_directory(str(path)))
+        yield
 
 
 def lock_file(stream, *, blocking=True):

@@ -174,7 +174,7 @@ def test_invalid_revision_suggests_existing_tag_without_switching(repository):
     message = json.loads(result.stdout)["error"]["message"]
     assert "Cannot resolve Git revision 'v2.2.1'" in message
     assert "Similar existing refs: '2.2.1'" in message
-    assert str(repository) in message
+    assert repr(str(repository)) in message
     assert "Retry the same symbol query with an exact revision" in message
     fixed = run(repository, "show", "Worker.run", rev="2.2.1")
     assert fixed["results"][0]["source"] == "2.2.1:pkg/worker.py"
