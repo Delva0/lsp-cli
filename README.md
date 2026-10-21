@@ -114,11 +114,9 @@ git show v2.31.0:requests/adapters.py | lsp refs conn.cert_reqs
 
 Direct source reads avoid starting semantic engines. Relationships use ty where available, supplemented by local lexical/control-flow analysis and validated C3 MRO. The default query path avoids building a redundant pyan3 graph; pyan3 remains a semantic regression oracle. Unresolved dynamic dispatch and imports outside the analysis input stay unresolved; an empty or partial result is not proof that no runtime relationship exists. Inspect the JSON coverage/diagnostics for automated consumers. CPU/IO and query size still matter; this is static evidence, not runtime execution.
 
-A short-lived local worker reuses parsed source and ty sessions between invocations and exits after 300 idle seconds by default (`LSP_IDLE_SECONDS` configures this). It starts automatically and needs no service deployment. Unix uses a local Unix socket; Windows uses an authenticated connection bound only to `127.0.0.1`, with a random token in your user temporary directory. Windows job objects ensure ty exits with its worker, including on cancellation or crashes. Temporary snapshots do not modify your checkout. See `src/pyrel/service.py` for the runtime contract.
+A short-lived local worker reuses parsed source and ty sessions between invocations and exits after 300 idle seconds by default (`LSP_IDLE_SECONDS` configures this). It starts automatically and needs no service deployment. Temporary snapshots do not modify your checkout.
 
-All nine actions, Unicode/space paths, ty relationships and completion, concurrent calls, worker reuse, crash recovery, idle cleanup and PowerShell pipelines are tested in native Windows x64 CI on Python 3.13 and 3.14. The PowerShell test installs the built wheel into an isolated uv tool environment; it does not depend on a development checkout for imports. Windows ARM64 is not yet verified.
-
-One retained **internal Cypher** regression has a known Windows limitation: Ladybug 0.21.0 hangs while preparing `MATCH (a:Symbol {name:"__stdin__.leaf"}) OPTIONAL MATCH (a)-[:CALLS]->(b) RETURN b.name`. Windows CI runs this case with a 60-second subprocess deadline and records the timeout as an expected failure; all other regressions still run. [Native-engine diagnostics](https://github.com/Delva0/lsp-cli/actions/runs/39413295604) reproduce it with different transaction and optimizer settings. The internal `pyrel.cli.main` Cypher entry is separate from the nine public `lsp` actions, which do not use it. The dependency pin and query semantics remain unchanged.
+Windows x64 is tested with Python 3.13 and 3.14. Windows ARM64 is not yet verified.
 
 ## Development / container deployment
 
@@ -144,6 +142,6 @@ lsp list HEAD: --kinds class function
 
 Git must be installed in that container. Source queries do not require installing the target application's dependencies; missing external types may limit relationship resolution.
 
-For Windows development, set `$env:UV_MANAGED_PYTHON = '1'` before `uv sync --frozen` and `uv run --frozen pytest -q`. The retained internal Ladybug backend requires the OpenSSL DLLs supplied by uv-managed Python; the PowerShell installer selects this automatically.
+For source installations on Windows, set `$env:UV_MANAGED_PYTHON = '1'` before `uv sync --frozen`. The PowerShell installer selects this automatically.
 
-The analysis originated from Graphub 0.18.18; 0.18.19 adds native Windows runtime and path compatibility. `upstream-source.json` retains the original import hashes, with subsequent changes tracked in this repository's Git history. Licensed under MIT; dependency licenses remain their own.
+Licensed under MIT; dependency licenses remain their own.
