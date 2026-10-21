@@ -43,7 +43,7 @@ def semantic(texts, query):
     except Exception as error:
         raise ValueError(
             "Semantic model weights are not prepared. During environment setup run "
-            "python -m pyrel.search --prepare-model (or the graphub package equivalent). "
+            "python -m lsp_cli.search --prepare-model. "
             f"Cache: {cache}. {type(error).__name__}",
         ) from error
     vectors = np.asarray(list(embedder.embed([query, *texts], batch_size=32)))

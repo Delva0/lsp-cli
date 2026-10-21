@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from pyrel.analysis import Analysis
-from pyrel.backend import PyanFacts, SiteVisitor
-from pyrel.model import Source, State, Value
-from pyrel.queries import query
+from lsp_cli.analysis import Analysis
+from lsp_cli.backend import PyanFacts, SiteVisitor
+from lsp_cli.model import Source, State, Value
+from lsp_cli.queries import query
 
 
 def test_state_forks_share_values_but_not_mutable_query_state():

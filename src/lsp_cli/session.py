@@ -71,10 +71,7 @@ class Session:
         if self.runner is None:
             import asyncio
 
-            if __package__ == "pyrel":
-                from graphub_lsp.lsp_worker import Engine
-            else:
-                from ...lsp.lsp_worker import Engine
+            from .lsp.worker import Engine
             self.runner = asyncio.Runner()
             ty = executable("ty")
             self.lsp_engine = Engine(

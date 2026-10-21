@@ -319,7 +319,7 @@ class Walker:
         event = self.event("CALL", node, state, callee=self.text(node.func), **self.a.describe(value))
         upstream = self.a.facts.binding(self.source, node)
         if event["resolution"] == "resolved":
-            event["binding_engine"] = "pyan3+flow" if upstream == value.target else "pyrel"
+            event["binding_engine"] = "pyan3+flow" if upstream == value.target else "lsp_cli"
         if value.kind == "builtin" and value.target == "builtins.super":
             if not args:
                 owner = self.symbol.owner

@@ -26,7 +26,7 @@
         if (-not (Test-Path -LiteralPath $uv)) { throw 'uv installation failed.' }
     }
 
-    $ref = if ($env:LSP_CLI_REF) { $env:LSP_CLI_REF } else { 'v0.18.19' }
+    $ref = if ($env:LSP_CLI_REF) { $env:LSP_CLI_REF } else { 'v0.18.20' }
     $source = if ($env:LSP_CLI_SOURCE) { $env:LSP_CLI_SOURCE } else {
         "git+https://github.com/Delva0/lsp-cli.git@$ref"
     }

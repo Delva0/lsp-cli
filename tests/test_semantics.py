@@ -4,9 +4,9 @@ import textwrap
 
 import pytest
 
-from pyrel.analysis import Analysis, Summary
-from pyrel.model import Source
-from pyrel.queries import query
+from lsp_cli.analysis import Analysis, Summary
+from lsp_cli.model import Source
+from lsp_cli.queries import query
 
 
 def analyze(text, **modules):
@@ -72,7 +72,7 @@ def test_pyan_reuse_and_c3_super_correction(backend):
         **{"pkg.base": "def helper(): pass\nclass A:\n    def ping(self): pass\n"},
     )
     if backend == "pyan":
-        from pyrel.backend import PyanFacts
+        from lsp_cli.backend import PyanFacts
         a = Analysis(a.sources, facts_factory=PyanFacts)
     events = calls(a, "D.run")
     assert [(e["callee"], e["target"]) for e in events] == [
@@ -83,13 +83,13 @@ def test_pyan_reuse_and_c3_super_correction(backend):
         ("super(B, self).ping", "example.C.ping"),
         ("imported", "pkg.base.helper"),
     ]
-    assert events[0]["binding_engine"] == ("pyan3+flow" if backend == "pyan" else "pyrel")
-    assert events[2]["binding_engine"] == "pyrel"
+    assert events[0]["binding_engine"] == ("pyan3+flow" if backend == "pyan" else "lsp_cli")
+    assert events[2]["binding_engine"] == "lsp_cli"
     assert targets(a, "D.work")[-1] == ("super().ping", "example.C.ping")
     assert targets(a, "B.work")[-1] == ("super().ping", "pkg.base.A.ping")
     inheritance = query(a, "inherits", ["D"])["results"][0]
     assert inheritance["mro"] == ["example.D", "example.B", "example.C", "pkg.base.A", "builtins.object"]
-    assert inheritance["mro_engine"] == ("pyan3" if backend == "pyan" else "pyrel-c3")
+    assert inheritance["mro_engine"] == ("pyan3" if backend == "pyan" else "lsp_cli-c3")
 
 
 def test_alias_rebinding_local_function_and_shadowing():

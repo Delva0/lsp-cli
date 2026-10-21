@@ -6,17 +6,17 @@ import sys
 
 import pytest
 
-from pyrel import __version__, cypher
-from pyrel.analysis import Analysis
-from pyrel.code_graph import CodeGraph
-from pyrel.model import Source
+from lsp_cli import __version__, cypher
+from lsp_cli.analysis import Analysis
+from lsp_cli.code_graph import CodeGraph
+from lsp_cli.model import Source
 
 from .test_cli import SPAN
 from .test_git_sources import git
 from .test_git_sources import repository as repository
 
 CHAIN = "def leaf(): pass\ndef mid(): leaf()\ndef start(): mid()\n"
-ENGINE = [sys.executable, "-c", "from pyrel.cli import main; raise SystemExit(main())"]
+ENGINE = [sys.executable, "-c", "from lsp_cli.query_cli import main; raise SystemExit(main())"]
 
 
 def invoke(*args, source=CHAIN, cwd=None):
@@ -48,7 +48,7 @@ def test_internal_query_entry_treats_commands_as_ordinary_symbol_names(name):
 def test_internal_query_help_schema_and_version_need_no_source():
     help_result = invoke("--help", source="not Python")
     assert "[REV[:NAME] ...] 'CYPHER'" in help_result.stdout
-    assert "{query}" not in help_result.stdout and "pysym query" not in help_result.stdout
+    assert "{query}" not in help_result.stdout and "lsp-cli query" not in help_result.stdout
     assert "--event" not in help_result.stdout
     body = query("--schema", source="not Python")
     assert body["engine"]["name"] == "Ladybug"

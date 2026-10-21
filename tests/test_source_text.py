@@ -4,7 +4,7 @@ import ast
 
 import pytest
 
-from pyrel.model import Source
+from lsp_cli.model import Source
 
 from .test_cypher import query, values
 
@@ -36,7 +36,7 @@ def test_source_projection_keeps_unicode_separators_on_their_original_line():
 
 
 def test_symbol_token_locations_preserve_repeated_names_and_unicode_headers():
-    from pyrel.symbols import Catalog
+    from lsp_cli.symbols import Catalog
 
     source = Source("names.py", "names", (
         "class Café:\n"

@@ -61,7 +61,7 @@ def test_path_text_keeps_status_for_zero_edges():
 @pytest.mark.parametrize("native", [True, False])
 def test_inheritance_and_refs_include_real_overrides(native, monkeypatch):
     if not native:
-        from pyrel.workspace import NeedsBindingsError, Workspace
+        from lsp_cli.workspace import NeedsBindingsError, Workspace
 
         def unavailable(*args):
             raise NeedsBindingsError("disabled for fallback check")
@@ -277,7 +277,7 @@ def test_role_diff_retains_context_across_gaps_at_zero_context(repository):
 @pytest.mark.parametrize("native", [True, False])
 def test_inheritance_depth_reports_omitted_descendants(native, monkeypatch):
     if not native:
-        from pyrel.workspace import NeedsBindingsError, Workspace
+        from lsp_cli.workspace import NeedsBindingsError, Workspace
 
         def unavailable(*args):
             raise NeedsBindingsError("disabled for fallback check")
@@ -294,7 +294,7 @@ def test_each_action_has_its_own_help_and_rejects_retired_options():
     import io
     from contextlib import redirect_stdout
 
-    from pyrel.commands import ACTIONS, parser
+    from lsp_cli.commands import ACTIONS, parser
 
     for action in ACTIONS:
         output = io.StringIO()
@@ -319,6 +319,6 @@ def test_module_entrypoint_exposes_the_same_public_actions():
 
     output = io.StringIO()
     with patch("sys.argv", ["lsp", "--help"]), redirect_stdout(output), pytest.raises(SystemExit) as exc:
-        runpy.run_module("pyrel", run_name="__main__")
+        runpy.run_module("lsp_cli", run_name="__main__")
     assert exc.value.code == 0
     assert "{list,show,refs,inheritance,path,history,diff,where,complete}" in output.getvalue()

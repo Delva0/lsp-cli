@@ -15,8 +15,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import islice
 
-from .model import Symbol
-
 FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 SCOPES = (*FUNCTIONS, ast.ClassDef)
 KINDS = ("module", "class", "function", "method", "variable", "parameter", "field", "import")
@@ -54,10 +52,6 @@ class Binding:
             **self.source.span(self.node),
             "selection": self.identifier,
         }
-
-    def legacy(self):
-        return Symbol(self.name, self.kind, self.node, self.source, self.parent, self.owner, self.decorators)
-
 
 @dataclass
 class Scope:

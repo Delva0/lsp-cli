@@ -86,7 +86,7 @@ def rejected(record, error, *, loader=None):
 
 
 def load(args, session, records, git_mode):
-    from .cli import inputs
+    from .query_cli import inputs
 
     groups = OrderedDict()
     if not git_mode:
@@ -214,8 +214,8 @@ def execute(arguments, session):
             raise ValueError("--schema does not accept a query, scope or parameters")
         return cypher.schema(), None
     if not args.symbols:
-        raise ValueError("Cypher text is required: pysym REV[:NAME] 'MATCH ... RETURN ...'; "
-                         "use pysym --schema for the graph schema")
+        raise ValueError("Cypher text is required: python -m lsp_cli.query_cli REV[:NAME] 'MATCH ... RETURN ...'; "
+                         "use python -m lsp_cli.query_cli --schema for the graph schema")
     text, args.symbols = args.symbols[-1], args.symbols[:-1]
     params = parameters(args.param)
     if args.max_work < 1 or args.timeout_ms < 1 or args.max_rows < 1:
@@ -258,7 +258,7 @@ def execute(arguments, session):
                                           "add a Cypher LIMIT or raise --max-rows"})
     except cypher.CypherError as error:
         result["error"] = {"kind": "CypherError", "message": str(error),
-                           "help": "Native Ladybug Cypher; pysym --schema lists code properties. "
+                           "help": "Native Ladybug Cypher; python -m lsp_cli.query_cli --schema lists code properties. "
                                    "https://docs.ladybugdb.com/cypher/difference/"}
         result["status"] = "error"
     result["output"] = output(result)

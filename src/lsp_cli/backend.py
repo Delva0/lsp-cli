@@ -36,7 +36,7 @@ class PyanFacts:
     def __init__(self, sources):
         self.warnings = []
         # Concurrent revision analyses must not capture one another's warnings.
-        logger = logging.Logger("pyrel.pyan")  # noqa: LOG001 -- per-analysis capture, never a shared global logger
+        logger = logging.Logger("lsp_cli.pyan")  # noqa: LOG001 -- per-analysis capture, never a shared global logger
         logger.setLevel(logging.WARNING)
         logger.propagate = False
         warnings = self.warnings

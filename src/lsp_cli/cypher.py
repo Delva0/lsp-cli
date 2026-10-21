@@ -97,7 +97,7 @@ def schema():
             "buffer_pool_bytes": "Native engine buffer budget for this invocation; present after native query success.",
         },
         "notes": [
-            "Usage: pysym REV[:SYMBOL] 'CYPHER'; pipe Python source to pysym 'CYPHER'.",
+            "Usage: python -m lsp_cli.query_cli REV[:SYMBOL] 'CYPHER'; pipe Python source to python -m lsp_cli.query_cli 'CYPHER'.",
             "Multiple REV:NAME inputs may span revisions; OLD..NEW:NAME expands to two inputs. Each revision is analyzed separately.",
             "Symbol.revision identifies the input revision. CALLS never links different revisions.",
             "Names include modules, classes, functions, assignment/import declarations and exact repository-relative Python file paths.",

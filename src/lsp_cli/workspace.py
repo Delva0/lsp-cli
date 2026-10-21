@@ -10,7 +10,7 @@ import tempfile
 import tokenize
 from pathlib import Path
 
-from . import cli as legacy
+from . import query_cli
 from .discovery import SelectionError
 from .fast_sources import NeedsBindingsError
 from .git_sources import GitSources, decode
@@ -77,7 +77,7 @@ class Workspace:
         elif args.command == "complete":
             self._incomplete_input()
         else:
-            self.loaded = {source.name: source for source in legacy.inputs(args, sys.stdin, session)}
+            self.loaded = {source.name: source for source in query_cli.inputs(args, sys.stdin, session)}
 
     def _incomplete_input(self):
         from .model import module_name

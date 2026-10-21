@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from pyrel.commands import parser
-from pyrel.session import Session
-from pyrel.platform_support import PIPE_EXIT, WINDOWS, executable, terminate_worker
-from pyrel.service import remove_work
+from lsp_cli.commands import parser
+from lsp_cli.session import Session
+from lsp_cli.platform_support import PIPE_EXIT, WINDOWS, executable, terminate_worker
+from lsp_cli.service import remove_work
 
 from .test_git_sources import git, write
 from .test_git_sources import repository as repository  # noqa: PLC0414

@@ -23,8 +23,8 @@ def write(repo, path, content):
 @pytest.fixture
 def repository(tmp_path):
     git(tmp_path, "init", "-q")
-    git(tmp_path, "config", "user.email", "pyrel@example.invalid")
-    git(tmp_path, "config", "user.name", "pyrel test")
+    git(tmp_path, "config", "user.email", "lsp_cli@example.invalid")
+    git(tmp_path, "config", "user.name", "lsp_cli test")
     write(tmp_path, "pkg/__init__.py", "from .base import Base\n")
     write(tmp_path, "pkg/base.py", "class Base:\n def ping(self): return 1\n")
     write(tmp_path, "pkg/worker.py", "from . import Base as Parent\n"
@@ -207,16 +207,14 @@ def test_show_git_inherited_method_uses_revision_not_worktree(repository, rev, v
     assert row["code"] == " def ping(self): return " + value
 
 
-def ripgit(*args, cwd, source=""):
-    # Git-style commands remain regression-tested internally after the public
-    # entry became query-only. test_cypher exercises the installed rgit entry.
+def address_query(*args, cwd, source=""):
     return subprocess.run([sys.executable, "-c",
-                           "from pyrel.cli import legacy_main; "
-                           "raise SystemExit(legacy_main(prog='rgit'))", *args], cwd=cwd,
+                           "from lsp_cli.query_cli import relationship_main; "
+                           "raise SystemExit(relationship_main(prog='lsp'))", *args], cwd=cwd,
                           input=source, text=True, capture_output=True, check=False)
 
 
-@pytest.mark.parametrize(("addressed", "legacy"), [
+@pytest.mark.parametrize(("addressed", "unversioned"), [
     (["show", "v1:Worker.ping"], ["show", "Worker.ping"]),
     (["callee", "v1:Worker.run"], ["callee", "Worker.run"]),
     (["trace", "v1:Worker.run"], ["trace", "Worker.run"]),
@@ -227,21 +225,21 @@ def ripgit(*args, cwd, source=""):
     (["outline", "v1:pkg.worker"], ["outline", "--file", "pkg/worker.py"]),
     (["where", "v1:pkg.worker", "--line", "4"], ["where", "--file", "pkg/worker.py", "--line", "4"]),
 ])
-def test_rgit_addresses_preserve_semantics_and_spans(repository, addressed, legacy):
-    result = ripgit(*addressed, "--json", cwd=repository / "src/pkg")
+def test_lsp_addresses_preserve_semantics_and_spans(repository, addressed, unversioned):
+    result = address_query(*addressed, "--json", cwd=repository / "src/pkg")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(result.stdout) == run(repository, *legacy)
+    assert json.loads(result.stdout) == run(repository, *unversioned)
 
 
-def test_rgit_accepts_ref_expressions_aliases_and_one_explicit_revision(repository):
-    result = ripgit("show", "HEAD^:Worker.ping", "--json", cwd=repository)
+def test_lsp_accepts_ref_expressions_aliases_and_one_explicit_revision(repository):
+    result = address_query("show", "HEAD^:Worker.ping", "--json", cwd=repository)
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)["results"][0]["source"] == "HEAD^:pkg/base.py"
     git(repository, "tag", "release/old", "v1")
-    result = ripgit("path", "v1:pkg.client.start", "release/old:pkg.base.Base.ping", "--json", cwd=repository)
+    result = address_query("path", "v1:pkg.client.start", "release/old:pkg.base.Base.ping", "--json", cwd=repository)
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)["status"] == "found"
-    result = ripgit("path", "v1:pkg.client.start", "pkg.base.Base.ping", "--json", cwd=repository)
+    result = address_query("path", "v1:pkg.client.start", "pkg.base.Base.ping", "--json", cwd=repository)
     assert result.returncode == 0 and json.loads(result.stdout)["status"] == "found"
 
 
@@ -250,8 +248,8 @@ def test_rgit_accepts_ref_expressions_aliases_and_one_explicit_revision(reposito
     ["show", "v1:Worker.ping", "--rev", "v2"],
     ["callee", "v1:Base.ping", "--receiver", "v2:Worker"],
 ])
-def test_rgit_rejects_mixed_commits_before_analysis(repository, args):
-    result = ripgit(*args, "--json", cwd=repository)
+def test_lsp_rejects_mixed_commits_before_analysis(repository, args):
+    result = address_query(*args, "--json", cwd=repository)
     assert result.returncode == 2
     body = json.loads(result.stdout)
     assert "different Git commits" in body["error"]["message"]
@@ -262,29 +260,29 @@ def test_rgit_rejects_mixed_commits_before_analysis(repository, args):
     ["show", "v1:"], ["show", ":Worker.run"], ["show", "missing:Worker.run"],
     ["outline", "v1:Worker"], ["where", "v1:Worker", "--line", "3"],
 ])
-def test_rgit_invalid_addresses_report_errors(repository, args):
-    result = ripgit(*args, "--json", cwd=repository)
+def test_lsp_invalid_addresses_report_errors(repository, args):
+    result = address_query(*args, "--json", cwd=repository)
     assert result.returncode == 2
     assert json.loads(result.stdout)["error"]["message"]
 
 
-def test_rgit_module_source_and_stdin(repository):
-    result = ripgit("show", "v1:pkg.worker", "--json", cwd=repository)
+def test_lsp_module_source_and_stdin(repository):
+    result = address_query("show", "v1:pkg.worker", "--json", cwd=repository)
     assert result.returncode == 0, result.stdout + result.stderr
     row = json.loads(result.stdout)["results"][0]
     assert row["symbol_kind"] == "module" and row["line"] == 1
     assert row["code"] == git(repository, "show", "v1:pkg/worker.py")
     code = "def local_only(): return 42\n"
-    result = ripgit("show", "local_only", "--json", cwd=repository, source=code)
+    result = address_query("show", "local_only", "--json", cwd=repository, source=code)
     assert result.returncode == 0, result.stdout + result.stderr
     body = json.loads(result.stdout)
     assert "git" not in body and body["results"][0]["code"] == code.rstrip()
 
 
-def test_rgit_entrypoint_reports_its_name(repository):
-    result = ripgit("--version", cwd=repository)
-    assert result.returncode == 0 and result.stdout.startswith("rgit ")
-    result = ripgit("--help", cwd=repository)
-    assert result.returncode == 0 and "usage: rgit" in result.stdout and "REV:" in result.stdout
-    result = ripgit("show", "v1:", cwd=repository)
-    assert result.returncode == 2 and result.stderr.startswith("rgit:")
+def test_lsp_entrypoint_reports_its_name(repository):
+    result = address_query("--version", cwd=repository)
+    assert result.returncode == 0 and result.stdout.startswith("lsp ")
+    result = address_query("--help", cwd=repository)
+    assert result.returncode == 0 and "usage: lsp" in result.stdout and "REV:" in result.stdout
+    result = address_query("show", "v1:", cwd=repository)
+    assert result.returncode == 2 and result.stderr.startswith("lsp:")

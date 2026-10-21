@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from pyrel import backend
-from pyrel.cli import subcommand_main
-from pyrel.git_sources import GitSources
-from pyrel.session import Session
+from lsp_cli import backend
+from lsp_cli.query_cli import subcommand_main
+from lsp_cli.git_sources import GitSources
+from lsp_cli.session import Session
 
 from .test_git_sources import git, run, write
 from .test_git_sources import repository as repository  # noqa: PLC0414

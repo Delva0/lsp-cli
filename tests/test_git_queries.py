@@ -5,12 +5,12 @@ import json
 import pytest
 
 from .test_cli import SPAN, invoke
-from .test_git_sources import git, ripgit, write
+from .test_git_sources import git, address_query, write
 from .test_git_sources import repository as repository  # noqa: PLC0414 -- Re-export the shared pytest fixture.
 
 
 def command(repo, *args):
-    result = ripgit(*args, "--json", cwd=repo)
+    result = address_query(*args, "--json", cwd=repo)
     assert result.returncode == 0, result.stdout + result.stderr
     body = json.loads(result.stdout)
     assert all(row.keys() >= SPAN for row in body["results"])
@@ -91,7 +91,7 @@ def test_diff_does_not_treat_incomplete_discovery_as_deletion(repository, target
         write(repository, "one.py", "def missing(): pass\n")
         write(repository, "two.py", "def missing(): pass\n")
         commit(repository, "ambiguous candidates beyond limit")
-    result = ripgit("diff", "v1..HEAD:" + target, *extra, "--json", cwd=repository)
+    result = address_query("diff", "v1..HEAD:" + target, *extra, "--json", cwd=repository)
     assert result.returncode == 2
     assert any(word in json.loads(result.stdout)["error"]["message"] for word in ("unresolved", "incomplete"))
 
@@ -105,7 +105,7 @@ def test_diff_ambiguity_is_an_error(repository, ambiguity):
         write(repository, "two.py", "def task(): pass\n")
     commit(repository, "ambiguous definitions")
     symbol = "task" if ambiguity == "function" else "Base.inherited"
-    result = ripgit("diff", "v1..HEAD:" + symbol, "--json", cwd=repository)
+    result = address_query("diff", "v1..HEAD:" + symbol, "--json", cwd=repository)
     assert result.returncode == 2
     assert "ambiguous" in json.loads(result.stdout)["error"]["message"]
 
@@ -113,7 +113,7 @@ def test_diff_ambiguity_is_an_error(repository, ambiguity):
 @pytest.mark.parametrize("address", ["Worker.run", "v1:Worker.run", "v1...v2:Worker.run", "v1..:Worker.run",
                                      "..v2:Worker.run", "v1..v2:Missing", "v1..bad:Worker.run"])
 def test_diff_invalid_range_or_missing_symbol(repository, address):
-    result = ripgit("diff", address, "--json", cwd=repository)
+    result = address_query("diff", address, "--json", cwd=repository)
     assert result.returncode == 2 and json.loads(result.stdout)["error"]["message"]
 
 
@@ -155,7 +155,7 @@ def test_blame_retains_origin_current_lines_and_original_text(repository):
     assert rows[2]["commit"] == git(repository, "rev-parse", "HEAD")
     assert rows[2]["text"] == "  self.timeout = 20"
     assert rows[1]["end_column"] == len(rows[1]["text"])
-    assert rows[0]["author"] == "pyrel test"
+    assert rows[0]["author"] == "lsp_cli test"
     assert rows[0]["author_time"] > 0 and rows[0]["author_timezone"]
 
 
@@ -185,17 +185,17 @@ def test_empty_module_has_no_invented_history_or_lines(repository, cmd):
     ["blame", "Base", "--stdin-filename", "file.py"], ["diff", "v1..v2:Base", "--rev", "v1"],
 ])
 def test_git_query_option_errors_are_actionable(repository, args):
-    result = ripgit(*args, "--json", cwd=repository)
+    result = address_query(*args, "--json", cwd=repository)
     assert result.returncode == 2 and json.loads(result.stdout)["error"]["message"]
 
 
 @pytest.mark.parametrize("args", [["diff", "v1..v2:Worker.ping"], ["history", "Worker.ping"],
                                  ["blame", "v1:Worker.ping"]])
 def test_git_queries_text_json_and_timing(repository, args):
-    first = ripgit(*args, "--json", cwd=repository)
-    second = ripgit(*args, "--json", "--stats", cwd=repository)
+    first = address_query(*args, "--json", cwd=repository)
+    second = address_query(*args, "--json", "--stats", cwd=repository)
     assert first.returncode == second.returncode == 0 and first.stdout == second.stdout
     assert "total=" in second.stderr
-    text = ripgit(*args, cwd=repository)
+    text = address_query(*args, cwd=repository)
     assert text.returncode == 0 and "pkg/base.py:2:0-2:" in text.stdout
     assert "pkg.base.Base.ping" in text.stdout or "return 1" in text.stdout

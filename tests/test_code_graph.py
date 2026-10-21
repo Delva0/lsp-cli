@@ -2,9 +2,9 @@
 
 import pytest
 
-from pyrel.analysis import Analysis
-from pyrel.code_graph import SPAN, CodeGraph, QueryLimit, Walk, serialize
-from pyrel.model import Source
+from lsp_cli.analysis import Analysis
+from lsp_cli.code_graph import SPAN, CodeGraph, QueryLimit, Walk, serialize
+from lsp_cli.model import Source
 
 
 def graph(text):
@@ -69,7 +69,7 @@ def test_unresolved_and_budgets_remain_explicit():
 
 
 def test_local_class_after_inference_budget_retains_unknown_bases():
-    from pyrel.analysis import Summary
+    from lsp_cli.analysis import Summary
 
     g = graph("class Base: pass\ndef factory():\n class Local(Base): pass\n return Local\n")
     # Exhaust the inference budget before the local class declaration is visited.

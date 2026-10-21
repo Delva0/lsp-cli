@@ -1,0 +1,4 @@
+include AGENTS.md .python-version uv.lock
+recursive-include tests *.py
+recursive-include scripts *.py *.sh *.ps1
+recursive-include examples *.sh

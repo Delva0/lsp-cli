@@ -6,11 +6,11 @@ import subprocess
 
 import pytest
 
-from pyrel import cli, session
+from lsp_cli import query_cli as cli, session
 
 from .test_cli import CLI, SPAN, invoke
 from .test_git_queries import commit
-from .test_git_sources import git, ripgit, write
+from .test_git_sources import git, address_query, write
 from .test_git_sources import repository as repository  # noqa: PLC0414 -- Re-export the shared pytest fixture.
 
 
@@ -30,10 +30,10 @@ from .test_git_sources import repository as repository  # noqa: PLC0414 -- Re-ex
 def test_every_single_target_command_preserves_each_independent_query(repository, command, targets, options):
     expected = []
     for target in targets:
-        one = ripgit(command, target, *options, "--json", cwd=repository / "src/pkg")
+        one = address_query(command, target, *options, "--json", cwd=repository / "src/pkg")
         assert one.returncode == 0, one.stdout + one.stderr
         expected.append({"input": target, **json.loads(one.stdout)})
-    result = ripgit(command, *targets, *options, "--json", cwd=repository / "src/pkg")
+    result = address_query(command, *targets, *options, "--json", cwd=repository / "src/pkg")
     assert result.returncode == 0, result.stdout + result.stderr
     body = json.loads(result.stdout)
     assert body == {"schema_version": 1, "command": command, "status": "ok", "queries": expected}
@@ -47,8 +47,8 @@ def test_cached_git_inputs_do_not_expand_another_query_scope_or_budget(repositor
     write(repository, "two.py", "def run(): return 2\n")
     commit(repository, "separate scopes")
     targets = ["HEAD:one.run", "HEAD:two.run", "HEAD:Worker.run", "HEAD:one.run"]
-    expected = [json.loads(ripgit("trace", target, *extra, "--json", cwd=repository).stdout) for target in targets]
-    result = ripgit("trace", *targets, *extra, "--json", cwd=repository)
+    expected = [json.loads(address_query("trace", target, *extra, "--json", cwd=repository).stdout) for target in targets]
+    result = address_query("trace", *targets, *extra, "--json", cwd=repository)
     assert result.returncode == 0
     assert json.loads(result.stdout)["queries"] == [
         {"input": target, **row} for target, row in zip(targets, expected, strict=True)
@@ -58,12 +58,12 @@ def test_cached_git_inputs_do_not_expand_another_query_scope_or_budget(repositor
 @pytest.mark.parametrize("bad", ["missing:Worker.run", "v1:Worker.missing", ":Worker.run", "v1:"])
 def test_bad_target_preserves_successful_siblings_in_order(repository, bad):
     targets = [bad, "v1:Worker.run", bad, "v2:Worker.ping"]
-    result = ripgit("show", *targets, "--json", cwd=repository)
+    result = address_query("show", *targets, "--json", cwd=repository)
     body = json.loads(result.stdout)
     assert result.returncode == 2 and body["status"] == "partial"
     assert [row["input"] for row in body["queries"]] == targets
     assert ["error" in row for row in body["queries"]] == [True, False, True, False]
-    text = ripgit("show", *targets, cwd=repository)
+    text = address_query("show", *targets, cwd=repository)
     assert text.returncode == 2 and not text.stderr
     assert "[2/4] show v1:Worker.run" in text.stdout and "pkg.worker.Worker.run" in text.stdout
 
@@ -71,10 +71,10 @@ def test_bad_target_preserves_successful_siblings_in_order(repository, bad):
 def test_unparseable_git_input_keeps_its_error_and_other_revision_readable(repository):
     write(repository, "bad.py", "def broken(:\n")
     commit(repository, "broken source")
-    result = ripgit("show", "HEAD:bad", "v1:Worker.run", "--json", cwd=repository)
+    result = address_query("show", "HEAD:bad", "v1:Worker.run", "--json", cwd=repository)
     body = json.loads(result.stdout)
     assert result.returncode == 2 and body["status"] == "partial"
-    single = ripgit("show", "HEAD:bad", "--json", cwd=repository)
+    single = address_query("show", "HEAD:bad", "--json", cwd=repository)
     assert body["queries"][0] == {"input": "HEAD:bad", **json.loads(single.stdout)}
     assert body["queries"][1]["results"][0]["symbol"] == "pkg.worker.Worker.run"
 
@@ -119,7 +119,7 @@ def run():
 
     monkeypatch.setattr(session, "Analysis", analyze)
     monkeypatch.setattr(cli.sys, "stdin", Stdin(source))
-    assert cli.legacy_main(["callee", *targets, "--json"]) == 0
+    assert cli.relationship_main(["callee", *targets, "--json"]) == 0
     body = json.loads(capsys.readouterr().out)
     assert body["queries"] == [{"input": target, **row} for target, row in zip(targets, expected, strict=True)]
     assert len(builds) == 1
@@ -142,7 +142,7 @@ def test_git_reuses_inventory_blobs_and_analysis_with_original_query_metadata(re
 
     monkeypatch.setattr(session.GitSources, "git", read_git)
     monkeypatch.setattr(session, "Analysis", analyze)
-    assert cli.legacy_main(["show", "v1:Worker.run", "v1:Worker.ping", "--repo", str(repository), "--json"]) == 0
+    assert cli.relationship_main(["show", "v1:Worker.run", "v1:Worker.ping", "--repo", str(repository), "--json"]) == 0
     body = json.loads(capsys.readouterr().out)
     assert sum(args[0] == "ls-tree" for args in git_calls) == 1
     assert len(blobs) == len(set(blobs))
@@ -167,11 +167,11 @@ def test_module_identity_hints_are_per_query_and_stdin_encoding_is_preserved(tmp
 
 
 def test_revision_options_apply_independently_and_bare_symbols_do_not_inherit_sibling_revision(repository):
-    result = ripgit("show", "v1:Worker.ping", "v2:Worker.ping", "--rev", "v1", "--json", cwd=repository)
+    result = address_query("show", "v1:Worker.ping", "v2:Worker.ping", "--rev", "v1", "--json", cwd=repository)
     groups = json.loads(result.stdout)["queries"]
     assert result.returncode == 2 and "error" not in groups[0]
     assert "different Git commits" in groups[1]["error"]["message"]
-    result = ripgit("show", "v1:Worker.run", "local", "--json", cwd=repository, source="def local(): pass\n")
+    result = address_query("show", "v1:Worker.run", "local", "--json", cwd=repository, source="def local(): pass\n")
     groups = json.loads(result.stdout)["queries"]
     assert result.returncode == 0 and "git" in groups[0] and "git" not in groups[1]
     assert groups[1]["results"][0]["source"] == "<stdin>"
@@ -180,14 +180,14 @@ def test_revision_options_apply_independently_and_bare_symbols_do_not_inherit_si
 @pytest.mark.parametrize("args", [["path", "v1:Worker.run", "v1:Base.ping", "v2:Worker.run", "v2:Base.ping"],
                                  ["where", "v1:pkg.worker", "v2:pkg.worker", "--line", "4"]])
 def test_path_and_where_keep_their_original_arity(repository, args):
-    result = ripgit(*args, "--json", cwd=repository)
+    result = address_query(*args, "--json", cwd=repository)
     assert result.returncode == 2 and "queries" not in json.loads(result.stdout)
 
 
 def test_all_failed_status_stats_and_single_protocol(repository):
-    result = ripgit("show", "v1:Worker.missing", "v2:Worker.missing", "--json", "--stats", cwd=repository)
+    result = address_query("show", "v1:Worker.missing", "v2:Worker.missing", "--json", "--stats", cwd=repository)
     assert result.returncode == 2 and json.loads(result.stdout)["status"] == "error"
     assert "total=" in result.stderr
-    single = ripgit("show", "v1:Worker.run", "--json", cwd=repository)
+    single = address_query("show", "v1:Worker.run", "--json", cwd=repository)
     assert single.returncode == 0 and "queries" not in json.loads(single.stdout)
     assert git(repository, "status", "--porcelain") == "M src/pkg/base.py"

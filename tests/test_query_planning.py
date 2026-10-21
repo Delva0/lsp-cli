@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyrel import batch
+from lsp_cli import batch
 
 from .test_actions import query
 from .test_git_sources import git, write
@@ -58,9 +58,9 @@ def test_absent_name_does_not_parse_unrelated_sources_but_matching_syntax_errors
 def test_syntax_proofs_reuse_blobs_across_versions_without_reusing_error_locations(repository, monkeypatch):
     from collections import Counter
 
-    from pyrel import git_sources
-    from pyrel.commands import parser
-    from pyrel.session import Session
+    from lsp_cli import git_sources
+    from lsp_cli.commands import parser
+    from lsp_cli.session import Session
 
     broken = "def broken_target(\n"
     fixed = "def fixed_target(): return 1\n"
@@ -119,7 +119,7 @@ def test_glob_listing_with_literal_leaf_matches_full_inventory(repository, monke
 
 
 def test_filename_in_explicit_file_scope_does_not_expand_dependencies(repository, monkeypatch):
-    from pyrel.workspace import Workspace
+    from lsp_cli.workspace import Workspace
 
     write(repository, "nested/task.py", "from pkg.base import Base\nclass Child(Base): pass\n")
     git(repository, "add", ".")
@@ -171,7 +171,7 @@ def test_regex_member_sets_do_not_scan_unrelated_modules(repository):
 
 
 def test_missing_root_with_text_mentions_does_not_load_other_query_dependencies(repository, monkeypatch):
-    from pyrel.workspace import Workspace
+    from lsp_cli.workspace import Workspace
 
     write(repository, "api.py", "class Actual:\n def run(self): return 1\n")
     write(repository, "mentions.py", "# Missing is a name in a comment, not a declaration.\nimport pkg.worker\n")
@@ -224,7 +224,7 @@ def test_scoped_name_colliding_with_a_module_keeps_all_matches(repository):
 
 @pytest.mark.parametrize("action", ["show", "list", "history"])
 def test_package_prefix_and_unicode_comments_do_not_parse_unrelated_modules(repository, monkeypatch, action):
-    from pyrel.model import Source
+    from lsp_cli.model import Source
 
     for i in range(80):
         write(repository, f"src/pkg/noise/n{i}.py", f"# 中文说明 K\nimport pkg\nclass Noise{i}: pass\n")
@@ -263,7 +263,7 @@ def test_scope_prefilter_keeps_import_and_assignment_alias_fallback(repository):
 
 
 def test_batch_blobs_preserve_duplicate_content_and_non_utf8_sources(repository, monkeypatch):
-    from pyrel.git_sources import GitSources
+    from lsp_cli.git_sources import GitSources
 
     content = b"# coding: latin-1\nvalue = 'caf\xe9'\n"
     for name in ("one.py", "two.py"):

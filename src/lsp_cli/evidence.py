@@ -4,7 +4,7 @@ import ast
 import tokenize
 from collections import defaultdict
 
-from .cli import location
+from .query_cli import location
 from .model import source_lines
 
 

@@ -3,10 +3,10 @@
 import io
 from unittest.mock import patch
 
-from pyrel.commands import parser
-from pyrel.search import search
-from pyrel.session import Session
-from pyrel.workspace import Workspace
+from lsp_cli.commands import parser
+from lsp_cli.search import search
+from lsp_cli.session import Session
+from lsp_cli.workspace import Workspace
 
 
 def internal_search(

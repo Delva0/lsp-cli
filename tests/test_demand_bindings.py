@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyrel.workspace import Workspace
+from lsp_cli.workspace import Workspace
 
 from .test_actions import query
 from .test_git_sources import git, write
@@ -93,7 +93,7 @@ def test_demand_call_bindings_match_exhaustive_import_closure(repository, monkey
 
 
 def test_eager_imports_keep_class_bodies_and_defer_nested_functions():
-    from pyrel.model import Source
+    from lsp_cli.model import Source
 
     source = Source("input.py", "input", """import first
 if flag:
@@ -112,8 +112,8 @@ def factory():
 def test_compiler_scopes_are_reused_only_for_identical_source_objects(monkeypatch):
     import symtable
 
-    from pyrel.lexical import LexicalFacts
-    from pyrel.model import Source
+    from lsp_cli.lexical import LexicalFacts
+    from lsp_cli.model import Source
 
     compiled = []
     original = symtable.symtable
@@ -171,8 +171,8 @@ def test_member_selection_closes_deferred_imports_before_returning(
 
 
 def test_rebuilt_analysis_reuses_lexical_effects_without_sharing_mutable_state():
-    from pyrel.analysis import Analysis
-    from pyrel.model import Source
+    from lsp_cli.analysis import Analysis
+    from lsp_cli.model import Source
 
     source = Source("input.py", "input", """def target(): pass
 callback = target
@@ -213,9 +213,9 @@ def test_unresolved_inherited_binding_keeps_its_reason_instead_of_silent_absence
 
 
 def test_cached_scope_layout_respects_factories_and_global_nonlocal_declarations():
-    from pyrel.analysis import Analysis
-    from pyrel.lexical import LexicalFacts
-    from pyrel.model import Source
+    from lsp_cli.analysis import Analysis
+    from lsp_cli.lexical import LexicalFacts
+    from lsp_cli.model import Source
 
     source = Source("input.py", "input", """global_value = 1
 def outer():

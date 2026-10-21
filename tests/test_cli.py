@@ -10,7 +10,7 @@ import pytest
 # Historical action contract remains directly replayable without exposing old
 # aliases in the new public lsp command.
 CLI = [sys.executable, "-c",
-       "from pyrel.cli import subcommand_main; raise SystemExit(subcommand_main())"]
+       "from lsp_cli.query_cli import subcommand_main; raise SystemExit(subcommand_main())"]
 CODE = "def target(): pass\nclass Base: pass\ndef start():\n value = target()\n return value\n"
 SPAN = {"source", "line", "column", "end_line", "end_column"}
 

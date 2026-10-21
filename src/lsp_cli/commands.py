@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from . import __version__
-from . import cli as legacy
+from . import query_cli
 from .completion import complete
 from .evidence import body, code_record, fragments, render
 from .relations import inheritance
@@ -21,7 +21,7 @@ from .symbols import KINDS
 ACTIONS = ("list", "show", "refs", "inheritance", "path", "history", "diff", "where", "complete")
 
 
-class ActionParser(legacy.Parser):
+class ActionParser(query_cli.Parser):
     def parse_args(self, args=None, namespace=None):
         args = list(sys.argv[1:] if args is None else args)
         if args and args[0] in getattr(self, "action_parsers", {}):
@@ -68,7 +68,7 @@ def parser():
         "Lines are one-based; columns are zero-based Unicode offsets; end positions are exclusive.",
     )
     result.add_argument("--version", action="version", version=f"lsp {__version__}")
-    actions = result.add_subparsers(dest="command", required=True, parser_class=legacy.Parser)
+    actions = result.add_subparsers(dest="command", required=True, parser_class=query_cli.Parser)
     descriptions = {
         "list": "List symbols within input modules, a directory, a module or a lexical scope.",
         "show": "Read original source, optionally selected by semantic roles or annotated with Git blame.",
@@ -355,7 +355,7 @@ def text(result):
     if command == "path":
         chain = "\n".join(f"{row['caller']} -> {row['target']}\t{location(row)}" for row in rows)
         return "\n".join(part for part in (result["status"], chain, render(result.get("evidence", []))) if part)
-    return legacy.compact(result)
+    return query_cli.compact(result)
 
 
 def main(argv=None, *, shared=None):
@@ -375,7 +375,7 @@ def main(argv=None, *, shared=None):
         args = parser().parse_args(argv)
         validate(args)
     except ValueError as error:
-        failure = legacy.failure(error, None)
+        failure = query_cli.failure(error, None)
         # A failed request must remain distinguishable from an empty search,
         # including when a consumer previews only the beginning of the JSON.
         result = {

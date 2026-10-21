@@ -2,9 +2,9 @@
 
 from collections import Counter
 
-from pyrel import relations
-from pyrel.commands import parser
-from pyrel.selectors import expand
+from lsp_cli import relations
+from lsp_cli.commands import parser
+from lsp_cli.selectors import expand
 
 from .test_actions import invoke, query
 from .test_git_sources import git, write
@@ -33,7 +33,7 @@ def test_invalid_regex_does_not_discard_other_queries():
 
 
 def test_invalid_symbol_braces_fail_before_loading_a_revision(monkeypatch):
-    from pyrel import batch
+    from lsp_cli import batch
 
     def unexpected(*args, **kwargs):
         raise AssertionError("An invalid symbol set must not load any repository sources")
@@ -237,7 +237,7 @@ def test_multi_file_completion_and_invalid_positions_are_independent(tmp_path, m
 def test_public_short_options_and_focused_help(capsys):
     import pytest
 
-    from pyrel.commands import ACTIONS, validate
+    from lsp_cli.commands import ACTIONS, validate
 
     args = parser().parse_args(["list", "Worker", "-r", "-k", "method", "-d", "2", "-j", "-f", "a.py", "b.py"])
     validate(args)
@@ -299,9 +299,9 @@ def test_directory_dot_case_insensitive_files_and_duplicate_globs(tmp_path, monk
 
 
 def test_overlapping_fragments_preserve_crlf_and_unicode_line_separators():
-    from pyrel.batch import merge_source
-    from pyrel.evidence import code_record
-    from pyrel.model import Source
+    from lsp_cli.batch import merge_source
+    from lsp_cli.evidence import code_record
+    from lsp_cli.model import Source
 
     source = Source("sample.py", "sample", "x='a\u2028b'\r\ny=2\r\nz=3\r\n")
     rows = merge_source([code_record(source, 1, 2), code_record(source, 2, 3)])
@@ -313,7 +313,7 @@ def test_overlapping_fragments_preserve_crlf_and_unicode_line_separators():
 def test_revision_jobs_overlap_without_reordering_results():
     from threading import Barrier
 
-    from pyrel.session import Session
+    from lsp_cli.session import Session
 
     barrier = Barrier(2)
     def job(value):

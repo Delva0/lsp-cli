@@ -2,7 +2,7 @@ name: Test
 
 on:
   push:
-    branches: [main, fix/windows-pwsh]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -43,6 +43,18 @@ jobs:
         run: uv run --frozen pytest -q tests/test_service.py tests/test_platform_support.py tests/test_output_contract.py::test_shared_file_input_error_is_reported_once --maxfail=3 --junitxml=runtime-results.xml
       - name: Build wheel
         run: uv build
+      - name: Installed-wheel smoke test (Linux)
+        if: runner.os == 'Linux'
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/lsp-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/lsp-bin
+        run: |
+          LSP_CLI_SOURCE="$(realpath dist/lsp_cli-*.whl)" bash scripts/install.sh
+          cd "$RUNNER_TEMP"
+          printf 'def sample(): return 1\n' | "$UV_TOOL_BIN_DIR/lsp" show sample
+          "$UV_TOOL_DIR/lsp-cli/bin/python" -I -c 'from lsp_cli.lsp.worker import Engine; from lsp_cli.identity import source_identity; assert "lsp/worker.py" in source_identity()["files"]; import importlib.util; assert importlib.util.find_spec("pyrel") is None; assert importlib.util.find_spec("graphub_lsp") is None'
+          cd "$GITHUB_WORKSPACE"
+          bash scripts/uninstall.sh
       - name: PowerShell installation and installed-wheel smoke test
         if: runner.os == 'Windows'
         shell: pwsh

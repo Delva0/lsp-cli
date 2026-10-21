@@ -11,10 +11,10 @@ from unittest.mock import patch
 
 import pytest
 
-from pyrel import backend
-from pyrel.commands import ACTIONS, main
-from pyrel.session import Session
-from pyrel.platform_support import executable
+from lsp_cli import backend
+from lsp_cli.commands import ACTIONS, main
+from lsp_cli.session import Session
+from lsp_cli.platform_support import executable
 
 from .search_helpers import internal_search
 from .test_git_sources import git, write
@@ -295,7 +295,7 @@ def test_empty_docstring_matches_and_doc_filter_rejects_refs():
 @pytest.mark.parametrize("native", [True, False])
 def test_refs_filters_are_relative_to_selected_binding(monkeypatch, native):
     if not native:
-        from pyrel.workspace import NeedsBindingsError, Workspace
+        from lsp_cli.workspace import NeedsBindingsError, Workspace
 
         def unavailable(*_args):
             raise NeedsBindingsError("test fallback")
@@ -653,7 +653,7 @@ def test_expression_refs_do_not_fabricate_receiver_definitions():
 
 
 def test_semantic_scope_is_filtered_before_embedding(monkeypatch):
-    from pyrel import search
+    from lsp_cli import search
 
     received = []
 

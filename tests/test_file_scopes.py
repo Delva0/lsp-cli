@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyrel import workspace
+from lsp_cli import workspace
 
 from .test_actions import query
 from .test_git_sources import git, write

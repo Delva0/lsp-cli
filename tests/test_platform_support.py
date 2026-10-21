@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from graphub_lsp.lsp_worker import server_info_matches, uri_path
-from pyrel.platform_support import WINDOWS, lock_file
+from lsp_cli.lsp.worker import server_info_matches, uri_path
+from lsp_cli.platform_support import WINDOWS, lock_file
 from .test_git_sources import git
 from .test_service import command, runtime  # noqa: F401
 from .test_git_sources import repository  # noqa: F401
@@ -45,7 +45,7 @@ def test_ty_pin_allows_only_release_build_metadata(version, accepted):
 def test_lock_is_exclusive_and_released_on_close(tmp_path):
     path = tmp_path / "lease"
     code = (
-        "from pyrel.platform_support import lock_file; import sys\n"
+        "from lsp_cli.platform_support import lock_file; import sys\n"
         "with open(sys.argv[1], 'ab') as stream:\n"
         " try: lock_file(stream, blocking=False)\n"
         " except BlockingIOError: raise SystemExit(23)\n"
@@ -67,7 +67,7 @@ def test_retained_cypher_backend_loads_its_native_libraries():
 import sys
 from pathlib import Path
 import ladybug
-from pyrel.platform_support import native_dlls
+from lsp_cli.platform_support import native_dlls
 print("Python DLLs:", [str(p) for p in Path(sys.base_prefix).rglob("*.dll")
                       if p.name.lower().startswith(("libssl", "libcrypto", "vcruntime"))])
 with native_dlls(ladybug):
@@ -109,7 +109,7 @@ def test_cancel_terminates_ty_and_cleans_snapshots(repository, runtime):
     # request. The real dispatch finally block must stop the real worker and ty.
     code = """
 import os, sys
-from pyrel import service
+from lsp_cli import service
 original = service.SocketStream.readline
 calls = 0
 def interrupted(self):

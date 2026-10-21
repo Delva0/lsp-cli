@@ -1,6 +1,6 @@
 [project]
 name = "lsp-cli"
-version = "0.18.19"
+version = "0.18.20"
 description = "Versioned Python symbols, source, bindings and execution events"
 readme = "README.md"
 requires-python = ">=3.13,<3.15"
@@ -14,7 +14,7 @@ Repository = "https://github.com/Delva0/lsp-cli"
 Issues = "https://github.com/Delva0/lsp-cli/issues"
 
 [project.scripts]
-lsp = "pyrel.commands:main"
+lsp = "lsp_cli.commands:main"
 
 [build-system]
 requires = ["setuptools>=77"]
@@ -22,9 +22,15 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["lsp_cli*"]
+namespaces = false
 
 [dependency-groups]
 dev = ["pytest>=8,<9"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true

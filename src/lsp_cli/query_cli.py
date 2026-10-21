@@ -25,11 +25,11 @@ class Parser(argparse.ArgumentParser):
         raise ValueError(message)
 
 
-def parser(prog="lsp-cli", *, legacy=False, cypher=True):
+def parser(prog="lsp-cli", *, subcommands=False, cypher=True):
     result = Parser(
         prog=prog,
-        usage=None if legacy else "%(prog)s [OPTIONS] [REV[:NAME] ...] 'CYPHER'",
-        description=("Versioned Python symbols, source, bindings, calls and execution events." if legacy else
+        usage=None if subcommands else "%(prog)s [OPTIONS] [REV[:NAME] ...] 'CYPHER'",
+        description=("Versioned Python symbols, source, bindings, calls and execution events." if subcommands else
                      "Native Cypher queries over versioned Python symbols, bindings and source events."),
         epilog=(f"Files: {prog} trace Class.method --file path.py. "
         f"Pipe: git show TAG:path.py | {prog} trace Class.method --stdin-filename path.py. "
@@ -45,7 +45,7 @@ def parser(prog="lsp-cli", *, legacy=False, cypher=True):
         "Default text output includes original line numbers; --json includes results[].code. "
         + (f"Cypher: {prog} query REV:SYMBOL 'MATCH (s:Symbol {{root:true}})-[:CALLS]->(t) RETURN t'. "
            f"Use {prog} query --schema for native Ladybug Cypher schema and scope rules." if cypher else ""))
-        if legacy else
+        if subcommands else
         f"Git: {prog} TAG:Class.method 'MATCH (s:Symbol {{root:true}}) RETURN s.source_code'. "
         f"Calls: {prog} TAG:Class.method 'MATCH (s:Symbol {{root:true}})-[c:CALLS]->(t) RETURN c,t'. "
         f"Pipe: git show TAG:path.py | {prog} 'MATCH (s:Symbol) RETURN s.name'. "
@@ -57,11 +57,11 @@ def parser(prog="lsp-cli", *, legacy=False, cypher=True):
         "Source columns are zero-based Unicode character offsets; end positions are exclusive.",
     )
     result.add_argument("--version", action="version", version=f"{prog} {__version__}")
-    if legacy:
+    if subcommands:
         result.add_argument("command", choices=COMMANDS if cypher else COMMANDS[:-1])
     else:
         result.set_defaults(command="query")
-    result.add_argument("symbols", nargs="*", metavar="[REV:SCOPE] CYPHER" if not legacy else "[REV:]SYMBOL")
+    result.add_argument("symbols", nargs="*", metavar="[REV:SCOPE] CYPHER" if not subcommands else "[REV:]SYMBOL")
     result.add_argument(
         "--file",
         "-f",
@@ -101,7 +101,7 @@ def parser(prog="lsp-cli", *, legacy=False, cypher=True):
         result.set_defaults(schema=False, param=[], max_work=4096, timeout_ms=30000, max_rows=1000)
     result.add_argument("--json", action="store_true", help="emit schema_version=1 JSON")
     result.add_argument("--receiver", help="analyze an inherited method using this class's MRO")
-    if not legacy:
+    if not subcommands:
         result.set_defaults(line=None, column=None, max_depth=32, max_count=None, unified=None,
                             event=None, edge=None, role=None)
         return result
@@ -494,18 +494,18 @@ def execute(args, session, selected_filters, prog):
         return result, (inputs_done, analysis_done)
 
 
-def main(argv=None, *, prog="lsp-cli", legacy=False, cypher=True):
+def main(argv=None, *, prog="lsp-cli", subcommands=False, cypher=True):
     argv = list(sys.argv[1:] if argv is None else argv)
     args = None
     started = time.perf_counter()
     try:
-        args = parser(prog, legacy=legacy, cypher=cypher).parse_intermixed_args(argv)
+        args = parser(prog, subcommands=subcommands, cypher=cypher).parse_intermixed_args(argv)
         if args.command != "where" and (args.line is not None or args.column is not None):
             raise ValueError("--line and --column apply to where")
         selected_filters = filters(args)
     except (ValueError, OSError, SyntaxError, UnicodeError) as error:
         command = args.command if args else (
-            next((arg for arg in argv if arg in COMMANDS), None) if legacy else "query"
+            next((arg for arg in argv if arg in COMMANDS), None) if subcommands else "query"
         )
         result = failure(error, command)
         if "--json" in argv:
@@ -529,16 +529,15 @@ def main(argv=None, *, prog="lsp-cli", legacy=False, cypher=True):
         return emit(result, args, prog, started, phases)
 
 
-def rgit_main():
-    """Expose the shared semantic engine through the Git-style CLI name."""
-    return main(prog="rgit")
-
-
-def legacy_main(argv=None, *, prog="pyrel"):
-    """Retain the combined command and Cypher entry for internal replays."""
-    return main(argv, prog=prog, legacy=True)
+def relationship_main(argv=None, *, prog="lsp"):
+    """Run relationship subcommands and Cypher through the internal query interface."""
+    return main(argv, prog=prog, subcommands=True)
 
 
 def subcommand_main(argv=None):
-    """Expose the symbol subcommands through the public lsp-cli executable."""
-    return main(argv, prog="lsp-cli", legacy=True, cypher=False)
+    """Run individual relationship queries for semantic engine consumers."""
+    return main(argv, prog="lsp-cli", subcommands=True, cypher=False)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

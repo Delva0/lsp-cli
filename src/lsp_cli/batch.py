@@ -4,7 +4,7 @@ import json
 from copy import copy
 from pathlib import PurePosixPath
 
-from . import cli as legacy
+from . import query_cli
 from .discovery import SelectionError
 from .evidence import fragments, head, render
 from .git_queries import compare, history, view
@@ -22,10 +22,10 @@ ERRORS = (ValueError, OSError, SyntaxError, UnicodeError)
 def failure(error, args, spec=None, ws=None, *, scope="query"):
     result = ws.result(args.command) if ws else getattr(error, "context", {})
     result = {
-        **legacy.failure(error, args.command),
+        **query_cli.failure(error, args.command),
         **result,
         "results": [],
-        "error": legacy.failure(error, args.command)["error"],
+        "error": query_cli.failure(error, args.command)["error"],
     }
     if isinstance(error, SelectionError):
         result["error"].update(status=error.status, candidates=[e.record() for e in error.candidates])
@@ -600,7 +600,7 @@ def render_batch(command, result, items):
             blocks.append(render([], group["heads"]) + "\nDIFF unchanged" + suffix)
         return "\n\n".join(blocks)
     if command == "history":
-        return "\n\n".join(legacy.compact({"command": command, "results": [row]}) for row in result["results"])
+        return "\n\n".join(query_cli.compact({"command": command, "results": [row]}) for row in result["results"])
     if command == "path":
         blocks = []
         for item in items:

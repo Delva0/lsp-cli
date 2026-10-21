@@ -1,7 +1,7 @@
-"""Sandbox-only Git snapshots and native language-server sessions.
+"""Immutable Git snapshots and native language-server sessions.
 
 No symbol analysis lives here. The installed server owns every LSP result.
-The operator starts this worker on first use; stdin EOF closes its sessions.
+The stdio worker starts on first use; stdin EOF closes its sessions.
 """
 
 import asyncio
@@ -17,10 +17,8 @@ from contextlib import suppress
 from pathlib import Path
 from urllib.parse import urlsplit
 
-if __package__:
-    from .lsp_client import Client, RPCError, frame, read_message
-else:
-    from graphub_lsp_client import Client, RPCError, frame, read_message
+from ..identity import source_identity
+from .client import Client, RPCError, frame, read_message
 
 
 async def command(*args, cwd=None):
@@ -68,7 +66,7 @@ class Session:
 
     def __init__(self, repo, oid, config):
         self.repo, self.oid, self.config = repo, oid, config
-        self.temp = tempfile.TemporaryDirectory(prefix="graphub-lsp-")
+        self.temp = tempfile.TemporaryDirectory(prefix="lsp-snapshot-")
         # Windows TEMP can use an 8.3 alias (RUNNER~1). Compare canonical paths
         # on both sides of the symlink boundary check.
         self.root = (Path(self.temp.name) / "source").resolve()
@@ -143,7 +141,7 @@ class Session:
                 if path.is_relative_to(self.repo):
                     path = self.root / path.relative_to(self.repo)
                 elif not path.is_relative_to(self.root) and any(
-                        part.startswith("graphub-lsp-") for part in path.parts):
+                        part.startswith("lsp-snapshot-") for part in path.parts):
                     # Native dependency URIs returned by the server may live outside
                     # the checkout. A different commit's snapshot must never be mixed in.
                     raise ValueError("This URI belongs to a different commit/session; repeat its original query")
@@ -250,7 +248,7 @@ class Engine:
 
 
 async def serve(config):
-    """Internal transport only; the model sees the tool's commit/lsp_api interface."""
+    """Serve framed JSON-RPC requests through the installed worker's standard streams."""
     engine, tasks = Engine(config), {}
     reader = asyncio.StreamReader(limit=128 * 1024 * 1024)
     await asyncio.get_running_loop().connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin.buffer)
@@ -259,6 +257,8 @@ async def serve(config):
         try:
             if message["method"] == "query":
                 result = await engine.query(**message["params"])
+            elif message["method"] == "identity":
+                result = source_identity()
             elif message["method"] == "shutdown":
                 for ident, task in list(tasks.items()):
                     if ident != message["id"]:

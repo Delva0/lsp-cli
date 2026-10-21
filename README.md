@@ -18,7 +18,7 @@ Windows (PowerShell 7 / `pwsh`), Linux and macOS are supported. Git and network 
 On Windows, install [Git for Windows](https://git-scm.com/install/windows) first if `git --version` fails, then reopen `pwsh` and run:
 
 ```powershell
-irm https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.20/scripts/install.ps1 | iex
 lsp --version
 lsp --help
 ```
@@ -28,7 +28,7 @@ The PowerShell installer uses uv-managed Python, activates `lsp` in the current 
 On Linux/macOS (no sudo or shell startup edits):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.20/scripts/install.sh | bash
 ```
 
 If `lsp` is not on your PATH, use the path printed by the installer (normally `~/.local/bin/lsp`), or add that directory to PATH. Installation downloads the pinned analysis dependencies; it is not a single static executable. No embedding model is downloaded by the public actions.
@@ -36,17 +36,17 @@ If `lsp` is not on your PATH, use the path printed by the installer (normally `~
 Uninstall the isolated tool, keeping uv, Python, your repositories and shared download caches:
 
 ```powershell
-irm https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.20/scripts/uninstall.ps1 | iex
 ```
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.19/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Delva0/lsp-cli/v0.18.20/scripts/uninstall.sh | bash
 ```
 
 With uv already installed:
 
 ```bash
-uv tool install --managed-python --python 3.13 --reinstall 'git+https://github.com/Delva0/lsp-cli.git@v0.18.19'
+uv tool install --managed-python --python 3.13 --reinstall 'git+https://github.com/Delva0/lsp-cli.git@v0.18.20'
 uv tool uninstall lsp-cli
 ```
 
@@ -120,6 +120,11 @@ Windows x64 is tested with Python 3.13 and 3.14. Windows ARM64 is not yet verifi
 
 ## Development / container deployment
 
+This repository is the sole source for the CLI, analysis, native LSP transport,
+tests and packaging. Consumers install `lsp-cli`; no adjacent Graphub checkout,
+source synchronization or import bridge is required. Python code lives under
+`src/lsp_cli`, including the native transport in `src/lsp_cli/lsp`.
+
 ```bash
 git clone https://github.com/Delva0/lsp-cli.git
 cd lsp-cli
@@ -135,13 +140,32 @@ LSP_CLI_SOURCE="$PWD" bash scripts/install.sh
 `uv sync` installs the project editable for development. In a prepared Python 3.13 container, install the tagged source with pip and run from the mounted repository:
 
 ```bash
-python -m pip install 'git+https://github.com/Delva0/lsp-cli.git@v0.18.19'
+python -m pip install 'git+https://github.com/Delva0/lsp-cli.git@v0.18.20'
 cd /workspace/your-repository
 lsp list HEAD: --kinds class function
 ```
 
 Git must be installed in that container. Source queries do not require installing the target application's dependencies; missing external types may limit relationship resolution.
 
+For an existing Docker container, build once here and install the wheel into its
+`/opt/lsp-cli` environment. This also installs the native worker used by consumers:
+
+```bash
+uv build
+uv run --frozen python scripts/containers.py --wheel dist/lsp_cli-0.18.20-py3-none-any.whl install CONTAINER
+```
+
+To upgrade existing images, use `rebuild IMAGE... --output build/images.json`
+instead of `install CONTAINER`. This advances each selected image tag and keeps
+the old image under a `-before-lsp-<image-id>` backup tag. The manifest records both
+image IDs and verifies every installed Python source against the wheel. Add
+`--offline` before the subcommand when dependencies are already installed. Images
+used as no-LSP controls should not be selected for installation.
+
 For source installations on Windows, set `$env:UV_MANAGED_PYTHON = '1'` before `uv sync --frozen`. The PowerShell installer selects this automatically.
+
+Build release artifacts with `uv build`; this builds the wheel from the source
+distribution. Run tests before committing and pushing to this repository's
+`origin`. GitHub Actions validates the standalone package on Linux and Windows.
 
 Licensed under MIT; dependency licenses remain their own.

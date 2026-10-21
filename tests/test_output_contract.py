@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyrel.semantics import ROLES
+from lsp_cli.semantics import ROLES
 
 from .test_action_roles import commit_source
 from .test_actions import invoke, query
@@ -267,7 +267,7 @@ def test_show_blame_keeps_attribution_when_only_the_signature_is_selected(reposi
 
 
 def test_empty_completion_keeps_its_input_position(monkeypatch):
-    from pyrel.workspace import Workspace
+    from lsp_cli.workspace import Workspace
 
     monkeypatch.setattr(Workspace, "request", lambda *_args: {"items": [], "isIncomplete": False})
     args = ("complete", "<stdin>:1:3")

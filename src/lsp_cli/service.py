@@ -11,7 +11,6 @@ import base64
 import errno
 import gc
 import hashlib
-import importlib.util
 import io
 import json
 import os
@@ -87,9 +86,7 @@ def endpoint(argv):
     identity = found.stdout.strip() if found.returncode == 0 else str(root)
     environment = {k: v for k, v in os.environ.items() if k not in {"PWD", "OLDPWD", "SHLVL", "_"}}
     digest = hashlib.sha256(json.dumps([sys.executable, identity, environment], sort_keys=True).encode())
-    native = "graphub_lsp" if __package__ == "pyrel" else __package__.removesuffix(".clis.pyrel") + ".lsp"
-    native_root = Path(importlib.util.find_spec(native).origin).parent
-    for path in sorted([*Path(__file__).parent.glob("*.py"), *native_root.glob("*.py")]):
+    for path in sorted(Path(__file__).parent.rglob("*.py")):
         digest.update(str(path).encode())
         digest.update(path.read_bytes())
     default = Path(tempfile.gettempdir()) / ("lsp-cli" if WINDOWS else f"lsp-cli-{os.getuid()}")

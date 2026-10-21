@@ -7,11 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from pyrel.analysis import Analysis
-from pyrel.model import Source, Value
-from pyrel.session import Session
-from pyrel.symbols import Catalog
-from pyrel.workspace import Workspace
+from lsp_cli.analysis import Analysis
+from lsp_cli.model import Source, Value
+from lsp_cli.session import Session
+from lsp_cli.symbols import Catalog
+from lsp_cli.workspace import Workspace
 
 from .test_actions import query
 from .test_git_sources import git, write
@@ -19,7 +19,7 @@ from .test_git_sources import repository as repository  # noqa: PLC0414
 
 
 def test_context_lookup_walks_each_scope_once_and_returns_isolated_records(monkeypatch):
-    from pyrel.lsp_queries import contexts
+    from lsp_cli.lsp_queries import contexts
 
     source = Source("sample.py", "sample", (
         "async def work(flag):\n"
@@ -208,7 +208,7 @@ def test_missing_module_member_does_not_analyze_unrelated_same_named_bindings(re
 
 
 def test_binding_selection_keeps_import_evidence_without_enumerating_unrelated_declarations():
-    from pyrel.discovery import Index
+    from lsp_cli.discovery import Index
 
     sources = [
         Source("entry.py", "entry", "from worker import Worker as Alias\n"),
@@ -229,7 +229,7 @@ def test_binding_selection_keeps_import_evidence_without_enumerating_unrelated_d
     "pkg.start.Alias", "Alias", "outer.saved", "pkg.start.outer.saved", "saved", "run", "absent",
 ])
 def test_deferred_declaration_matching_preserves_full_enumeration(selector):
-    from pyrel.discovery import Index, matching
+    from lsp_cli.discovery import Index, matching
 
     sources = [
         Source("start.py", "pkg.start", "from pkg.worker import Worker as Alias\n"
@@ -363,7 +363,7 @@ def test_readonly_class_and_safe_constructor_prove_absence_without_dependency_cl
      "class Unique:\n def __init__(self): install(self)\n"),
 ])
 def test_absence_proof_preserves_class_and_constructor_escape(source, monkeypatch):
-    from pyrel import member_lookup
+    from lsp_cli import member_lookup
 
     planned = query("show", "Unique.callback", source=source)
     monkeypatch.setattr(member_lookup, "absent_member", lambda *_args: False)
@@ -373,7 +373,7 @@ def test_absence_proof_preserves_class_and_constructor_escape(source, monkeypatc
 
 
 def test_absence_proof_does_not_ignore_star_rebinding_of_a_class(repository, monkeypatch):
-    from pyrel import member_lookup
+    from lsp_cli import member_lookup
 
     write(repository, "src/pkg/start.py", "class Unique: pass\nfrom .overwrite import *\n")
     write(repository, "src/pkg/overwrite.py", "class Unique:\n def callback(self): return 'rebound'\n")
@@ -408,7 +408,7 @@ def test_external_base_without_own_member_stays_unresolved_without_flow(monkeypa
     "class Worker(External): pass\nWorker.callback = target\n",
 ])
 def test_external_base_preflight_preserves_resolvable_own_bindings(definition, monkeypatch):
-    from pyrel import member_lookup
+    from lsp_cli import member_lookup
 
     source = "from unavailable import External\ndef target(): return 1\n" + definition
     planned = query("show", "Worker.callback", source=source)
@@ -419,7 +419,7 @@ def test_external_base_preflight_preserves_resolvable_own_bindings(definition, m
 
 
 def test_external_base_preflight_does_not_hide_a_rebound_base(monkeypatch):
-    from pyrel import member_lookup
+    from lsp_cli import member_lookup
 
     source = ("from unavailable import External\nclass Known:\n def callback(self): return 1\n"
               "External = Known\nclass Worker(External): pass\n")
@@ -439,7 +439,7 @@ def test_external_base_preflight_does_not_hide_a_rebound_base(monkeypatch):
 ])
 @pytest.mark.parametrize("pattern", ["needle", "nee*", "n?ed*"])
 def test_bare_member_uses_ty_descendants_without_cataloging_unrelated_files(repository, monkeypatch, definition, pattern):
-    from pyrel import planning
+    from lsp_cli import planning
 
     write(repository, "src/pkg/base.py", "class Root:\n def needle(self): return 1\n")
     write(repository, "src/pkg/child.py", definition)
@@ -535,7 +535,7 @@ def test_binding_prefix_plans_the_same_receiver_as_flow(repository, selector, ex
 
 
 def test_unresolved_mro_reuses_proof_until_analysis_inputs_change():
-    from pyrel.relations import type_order
+    from lsp_cli.relations import type_order
 
     source = Source("m.py", "m", "class Child(Base): pass\n")
     ws = SimpleNamespace(sources=[source], catalog=Catalog([source]))
@@ -600,8 +600,8 @@ def test_dynamic_or_unbound_receivers_keep_flow_validation(body, monkeypatch):
 
 
 def test_validated_native_requests_skip_git_but_public_refs_still_move(repository, monkeypatch):
-    from pyrel.git_sources import GitSources
-    from graphub_lsp import lsp_worker
+    from lsp_cli.git_sources import GitSources
+    from lsp_cli.lsp import worker as lsp_worker
 
     loader = GitSources(repository, "v1")
     invoked = []
@@ -700,7 +700,7 @@ def start():
 
 def test_cli_frontend_does_not_import_unused_semantic_engines():
     result = subprocess.run(
-        [sys.executable, "-c", ("import sys; from pyrel.commands import main; "
+        [sys.executable, "-c", ("import sys; from lsp_cli.commands import main; "
                                "assert 'pyan' not in sys.modules; assert 'asyncio' not in sys.modules")],
         capture_output=True, text=True, check=False,
     )
@@ -708,7 +708,7 @@ def test_cli_frontend_does_not_import_unused_semantic_engines():
 
 
 def test_call_contexts_reuse_lexical_scopes_without_reusing_callback_bindings(monkeypatch):
-    from pyrel.flow import Walker
+    from lsp_cli.flow import Walker
 
     visited = []
     original = Walker._scopes

@@ -316,7 +316,7 @@ class Analysis:
             result = [n for n in upstream if n != "builtins.object"] + ["builtins.object"]
             self.mro_engines[name] = "pyan3"
         else:
-            self.mro_engines[name] = "pyrel-c3"
+            self.mro_engines[name] = "lsp_cli-c3"
         self.orders[name] = result
         return result
 
